@@ -1,25 +1,59 @@
 export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'informational'
+export type FindingStatus = 'open' | 'mitigated' | 'enriched'
+export type FindingType = 'SAST' | 'SCA' | 'DAST'
 
 export interface Finding {
   id: string
+  title: string
   severity: FindingSeverity
-  name: string
-  cve_id: string | null
-  repo: string
-  file: string | null
+  severity_numerical: number | null
+  status: FindingStatus
+  type: FindingType | null
+  category: string | null
+  tool: string | null
+  language: string | null
+  file_path: string | null
   line: number | null
-  cvss_score: number | null
-  status: 'open' | 'mitigated' | 'false_positive'
+  cwe: number | null
+  extra_cwe: number[]
+  cvssv3_score: number | null
+  cvssv4_score: number | null
+  prioritization_value: number | null
+  effort_for_fixing: number | null
+  exploitability: number | null
+  impact: number | null
+  confidence: number | null
+  estimated_epss: number | null
+  repo_id: string
+  repo_nickname: string | null
+  date: string
+  is_false_positive: boolean
+  is_duplicate: boolean
+  is_sandbox: boolean
+  owasps: string[]
+  policy_rules: unknown[]
+  tags: string[]
+  cve: string | null
   description: string | null
-  created_at: string
+  mitigation: string | null
 }
 
 export interface Repository {
   id: string
   nickname: string
   uri: string
+  active: boolean
+  repo_type: string
+  status: string
   source_control: string
-  scan_status: 'idle' | 'scanning' | 'completed' | 'failed'
+  finding_counts: {
+    total: number
+    critical: number
+    high: number
+    medium: number
+    low: number
+    info: number
+  }
 }
 
 export interface Remediation {
@@ -56,4 +90,4 @@ export interface ChatMessage {
 
 export type Panel = 'findings' | 'repos' | 'chat'
 
-export type InputMode = 'navigation' | 'repl' | 'chat' | 'login'
+export type InputMode = 'navigation' | 'repl' | 'chat' | 'login' | 'filter'

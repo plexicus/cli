@@ -1,13 +1,48 @@
 {
-  "id": "f-001",
-  "severity": "critical",
-  "name": "SQL Injection in user login",
-  "cve_id": "CVE-2023-1234",
-  "repo": "api-service",
-  "file": "src/auth/login.py",
-  "line": 42,
-  "cvss_score": 9.8,
-  "status": "open",
-  "description": "User-supplied input is concatenated directly into SQL query without sanitization. An attacker can bypass authentication or extract sensitive data from the database.",
-  "created_at": "2024-01-15T10:30:00Z"
+  "data": [
+    {
+      "id": "f-001",
+      "attributes": {
+        "title": "SQL Injection in user login",
+        "severity": "critical",
+        "severity_numerical": 90,
+        "status": "open",
+        "type": "SAST",
+        "category": "Application",
+        "tool": "semgrep",
+        "language": "python",
+        "file_path": "src/auth/login.py",
+        "line": 42,
+        "cwe": 89,
+        "extra_cwe": [],
+        "cvssv3_score": 9.8,
+        "cvssv4_score": 0.0,
+        "prioritization_value": 85,
+        "effort_for_fixing": 30,
+        "exploitability": 80,
+        "impact": 90,
+        "confidence": 75,
+        "estimated_epss": 0.12,
+        "repo_id": "r-001",
+        "date": "2024-01-15T10:30:00Z",
+        "is_false_positive": false,
+        "is_duplicate": false,
+        "is_sandbox": false,
+        "owasps": ["A03:2021-Injection"],
+        "policy_rules": [],
+        "tags": [],
+        "cve": "CVE-2023-1234",
+        "description": "User-supplied input is concatenated directly into SQL query without sanitization. An attacker can bypass authentication or extract sensitive data from the database.",
+        "mitigation": null
+      }
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "pageCount": 1,
+      "pageSize": 25,
+      "total": 1
+    }
+  }
 }

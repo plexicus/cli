@@ -6,7 +6,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/plexicus/cli?label=release)](https://github.com/plexicus/cli/releases/latest)
 [![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun&logoColor=black)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-52%20passing-brightgreen)](https://github.com/plexicus/cli/actions)
+[![Tests](https://img.shields.io/badge/tests-55%20passing-brightgreen)](https://github.com/plexicus/cli/actions)
 
 <!-- Terminal demo — recording coming soon -->
 ```
@@ -133,7 +133,8 @@ plexicus
 The default view. Shows all findings for your connected repositories, sorted by severity (Critical → High → Medium → Low → Informational).
 
 - **Pagination**: 20 findings per page. Use `]` and `[` to move between pages.
-- **Filtering**: use `:filter severity:critical,high` or `:filter repo:my-service` to narrow the list.
+- **Filter modal**: press `F` to open the interactive filter modal — filter by severity, repository (with fuzzy search), status, type, CVSS range, priority range, language, category, CWE IDs, and false positive inclusion.
+- **REPL filter**: quick filter via `:filter severity:critical,high` or `:filter repo:my-service`.
 - **Jump to CVE**: launch with `plexicus --cve CVE-2024-1234` to open the TUI with that finding pre-selected.
 
 ### Repos panel
@@ -161,7 +162,7 @@ Press `Enter` on any finding to open the detail pane:
 - CVE ID and CVSS score
 - Full vulnerability description
 - File path and line number
-- Status (open / mitigated / false positive)
+- Status (`open` / `mitigated` / `enriched`), false positive flag
 - Actions: remediate, create PR, suppress, toggle false positive
 
 ---
@@ -183,6 +184,7 @@ Press `Enter` on any finding to open the detail pane:
 | `Tab` | Toggle between panels |
 | `]` / `[` | Next / previous page |
 | `/` | Open fuzzy search (findings panel only) |
+| `F` | Open filter modal |
 | `:` | Open REPL command bar |
 | `c` | Toggle AI chat sidebar |
 | `?` | Show keybindings help |
@@ -195,7 +197,8 @@ Press `Enter` on any finding to open the detail pane:
 | `r` | Request AI remediation |
 | `p` | Create pull request from remediation |
 | `s` | Mark finding as mitigated |
-| `f` | Toggle false positive status |
+| `f` | Toggle false positive (lowercase f) |
+| `F` | Open filter modal (uppercase F / Shift+F) |
 
 ### REPL mode (`:` to enter)
 
@@ -228,27 +231,49 @@ Press `Enter` on any finding to open the detail pane:
 
 Open the REPL with `:` and type a command. Press `Esc` to return to navigation without running anything.
 
-### `:ask <question>`
+### `:ask <question>` (alias: `:a`)
 
 Opens the AI chat sidebar and sends the question immediately.
 
 ```
 :ask what is the impact of CVE-2024-1234?
-:ask how should I prioritize these findings?
+:a how should I prioritize these findings?
 ```
 
-### `:filter <criteria>`
+### `F` — Filter modal (recommended)
 
-Filters the findings list. Criteria can be combined.
+Press `F` in navigation mode to open the interactive filter modal. Navigate with `↑`/`↓`, toggle checkboxes with `Space`, press `Enter` to apply, `r` to reset, `Esc` to cancel.
+
+Available filters:
+
+| Filter | Type | Notes |
+|--------|------|-------|
+| Severity | Multi-select | critical, high, medium, low, informational |
+| Repository | Fuzzy multi-select | Type to search, `j`/`k` to navigate, `Space` to select |
+| Status | Multi-select | open, mitigated, enriched |
+| Type | Multi-select | SAST, SCA, DAST |
+| CVSS score | Min / max range | 0.0–10.0 |
+| Priority | Min / max range | 0–100 |
+| Language | Text | e.g. `python` |
+| Category | Text | e.g. `Application` |
+| CWE IDs | Multi-chip | Type number + Enter to add |
+| False positives | Toggle | Include findings marked as false positive |
+
+A cyan `●` indicator appears in the column header when a non-default filter is active.
+
+### `:filter <criteria>` (REPL shortcut)
+
+Quick filter from the REPL. Criteria can be combined.
 
 ```bash
 :filter severity:critical
 :filter severity:critical,high
 :filter repo:my-backend
-:filter severity:high repo:frontend
+:filter severity:high repo:frontend status:open
 ```
 
 Valid severity levels: `critical`, `high`, `medium`, `low`, `informational`
+Valid status values: `open`, `mitigated`, `enriched`
 
 To clear the filter, run `:filter` with no arguments (or restart the TUI).
 
@@ -261,9 +286,17 @@ Switches the UI colour theme live.
 :theme light
 ```
 
-### `:config`
+### `:config set <key> <value>`
 
-The `config` command is available in the REPL registry for in-TUI configuration queries. For setting persistent values, use the `plexicus config set` CLI subcommand from your shell.
+Set a configuration value without leaving the TUI.
+
+```
+:config set llm.provider claude
+:config set llm.api_key sk-ant-...
+:config set theme light
+```
+
+This is equivalent to running `plexicus config set <key> <value>` from your shell. Key aliases apply: `llm.api_key` → stored as `llm.apiKey`, `llm.base_url` → stored as `llm.baseUrl`.
 
 ---
 

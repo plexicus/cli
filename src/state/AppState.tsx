@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, type ReactNode } from 'react'
-import type { Finding, FindingSeverity, Repository, Remediation, ChatMessage, Panel, InputMode, SessionUser } from '../types.js'
-import type { Action } from './actions.js'
+import type { Finding, Repository, Remediation, ChatMessage, Panel, InputMode, SessionUser } from '../types.js'
+import type { Action, FindingsFilter } from './actions.js'
 
 export interface AppState {
   isAuthenticated: boolean
@@ -9,7 +9,10 @@ export interface AppState {
   findings: Finding[]
   selectedFindingId: string | null
   findingsLoading: boolean
-  findingsFilter: { repo?: string; severities?: FindingSeverity[] }
+  findingsFilter: FindingsFilter
+  findingsPage: number
+  findingsTotal: number
+  findingsPageCount: number
   repos: Repository[]
   reposLoading: boolean
   remediations: Record<string, Remediation>
@@ -19,6 +22,7 @@ export interface AppState {
   activePanel: Panel
   inputMode: InputMode
   fuzzyOpen: boolean
+  filterOpen: boolean
   theme: 'dark' | 'light'
   error: string | null
   pendingChatMessage: string | null
@@ -32,6 +36,9 @@ const initialState: AppState = {
   selectedFindingId: null,
   findingsLoading: false,
   findingsFilter: { severities: ['critical', 'high'] },
+  findingsPage: 0,
+  findingsTotal: 0,
+  findingsPageCount: 1,
   repos: [],
   reposLoading: false,
   remediations: {},
@@ -41,6 +48,7 @@ const initialState: AppState = {
   activePanel: 'findings',
   inputMode: 'navigation',
   fuzzyOpen: false,
+  filterOpen: false,
   theme: 'dark',
   error: null,
   pendingChatMessage: null,
@@ -64,12 +72,18 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, selectedFindingId: action.payload }
 
     case 'findings/filter':
-      return { ...state, findingsFilter: action.payload }
+      return { ...state, findingsFilter: action.payload, findingsPage: 0 }
 
     case 'findings/update': {
       const updated = state.findings.map(f => f.id === action.payload.id ? action.payload : f)
       return { ...state, findings: updated }
     }
+
+    case 'findings/setPage':
+      return { ...state, findingsPage: action.payload }
+
+    case 'findings/setPagination':
+      return { ...state, findingsTotal: action.payload.total, findingsPageCount: action.payload.pageCount }
 
     case 'repos/set':
       return { ...state, repos: action.payload, reposLoading: false }
@@ -127,6 +141,12 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'ui/setFuzzyOpen':
       return { ...state, fuzzyOpen: action.payload, inputMode: action.payload ? 'repl' : 'navigation' }
+
+    case 'filter/open':
+      return { ...state, filterOpen: true, inputMode: 'filter' }
+
+    case 'filter/close':
+      return { ...state, filterOpen: false, inputMode: 'navigation' }
 
     default:
       return state

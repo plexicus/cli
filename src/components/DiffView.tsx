@@ -43,7 +43,7 @@ export function DiffView({ finding, onClose }: DiffViewProps) {
       {/* Header */}
       <Box>
         <Text bold color="yellow">AI Remediation</Text>
-        <Text dimColor> — {finding.name}</Text>
+        <Text dimColor> — {finding.title}</Text>
       </Box>
 
       {isPending && (

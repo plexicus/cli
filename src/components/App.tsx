@@ -7,8 +7,10 @@ import { ReposPanel } from './ReposPanel.js'
 import { ChatSidebar } from './ChatSidebar.js'
 import { DetailPane } from './DetailPane.js'
 import { DiffView } from './DiffView.js'
+import { FilterModal } from './FilterModal.js'
 import { LoginForm } from './LoginForm.js'
 import { FirstRunWizard } from './FirstRunWizard.js'
+import { findCommand } from '../commands.js'
 import type { Config } from '../services/config.js'
 import type { Panel } from '../types.js'
 
@@ -59,9 +61,11 @@ function AppShell(props: AppProps) {
   >(null)
   const commandHistory = useRef<string[]>([])
   const historyIndex = useRef(-1)
-  // Always-current ref to replInput — avoids stale closures in useInput
+  // Always-current refs — avoid stale closures in useInput and useCallback
   const replInputRef = useRef('')
   replInputRef.current = replInput
+  const stateRef = useRef(state)
+  stateRef.current = state
 
   // Set initial panel from props on mount
   useEffect(() => {
@@ -77,6 +81,9 @@ function AppShell(props: AppProps) {
       return
     }
 
+    // Filter modal captures all its own keys via its own useInput
+    if (state.inputMode === 'filter') return
+
     // ? opens help in navigation and chat modes; in repl mode it is typeable via char capture
     if (input === '?' && (state.inputMode === 'navigation' || state.inputMode === 'chat')) {
       setShowHelp(true)
@@ -84,6 +91,10 @@ function AppShell(props: AppProps) {
     }
 
     if (state.inputMode === 'navigation') {
+      if (input === 'F') {
+        dispatch({ type: 'filter/open' })
+        return
+      }
       if (input === '/') {
         dispatch({ type: 'ui/setFuzzyOpen', payload: true })
         return
@@ -184,19 +195,16 @@ function AppShell(props: AppProps) {
       const args = parts.slice(1)
 
       try {
-        if (cmdName === 'ask') {
+        if (cmdName === 'ask' || cmdName === 'a') {
           if (args.length === 0) {
             setReplOutput('Usage: /ask <question>')
             dispatch({ type: 'ui/setInputMode', payload: 'navigation' })
             return
           }
-          // Show chat sidebar
           if (!state.chatVisible) {
             dispatch({ type: 'chat/toggle' })
           }
-          // Set input mode to chat so the sidebar input is focused
           dispatch({ type: 'ui/setInputMode', payload: 'chat' })
-          // Auto-send the question via pending state
           dispatch({ type: 'chat/setPending', payload: args.join(' ') })
           setReplOutput(null)
           return
@@ -215,18 +223,12 @@ function AppShell(props: AppProps) {
         }
 
         if (cmdName === 'filter') {
-          const filter: {
-            repo?: string
-            severities?: Array<
-              'critical' | 'high' | 'medium' | 'low' | 'informational'
-            >
-          } = {}
+          const filter: { severities?: Array<'critical' | 'high' | 'medium' | 'low' | 'informational'> } = {}
           for (const arg of args) {
             const [k, v] = arg.split(':')
-            if (k === 'severity' || k === 'severities') {
+            if ((k === 'severity' || k === 'severities') && v) {
               filter.severities = v.split(',') as typeof filter.severities
             }
-            if (k === 'repo') filter.repo = v
           }
           dispatch({ type: 'findings/filter', payload: filter })
           setReplOutput(`Filter applied`)
@@ -234,14 +236,29 @@ function AppShell(props: AppProps) {
           return
         }
 
-        setReplOutput(`Unknown command: /${cmdName} — type /? for help`)
+        if (cmdName === '?' || cmdName === 'help') {
+          dispatch({ type: 'ui/setInputMode', payload: 'navigation' })
+          setShowHelp(true)
+          return
+        }
+
+        // Fallback: route through the command registry
+        const cmd = await findCommand(cmdName)
+        if (cmd && cmd.type === 'local') {
+          const result = await cmd.call(args, { state: stateRef.current, dispatch })
+          if (result) setReplOutput(result)
+          dispatch({ type: 'ui/setInputMode', payload: 'navigation' })
+          return
+        }
+
+        setReplOutput(`Unknown command: /${cmdName}`)
         dispatch({ type: 'ui/setInputMode', payload: 'navigation' })
       } catch (err) {
         setReplOutput(err instanceof Error ? err.message : 'Command failed')
         dispatch({ type: 'ui/setInputMode', payload: 'navigation' })
       }
     },
-    [dispatch],
+    [dispatch, setShowHelp],
   )
 
   const borderColor = state.theme === 'dark' ? 'cyan' : 'blue'
@@ -265,6 +282,12 @@ function AppShell(props: AppProps) {
           <>
             <Text dimColor> | </Text>
             <Text color="red">{state.error}</Text>
+          </>
+        )}
+        {state.filterOpen && (
+          <>
+            <Text dimColor> | </Text>
+            <Text color="cyan">FILTER</Text>
           </>
         )}
       </Box>
@@ -311,6 +334,9 @@ function AppShell(props: AppProps) {
         <ChatSidebar helpOpen={showHelp} />
       </Box>
 
+      {/* Filter modal */}
+      {state.filterOpen && <FilterModal />}
+
       {/* REPL output */}
       {replOutput && (
         <Box paddingX={1}>
@@ -326,7 +352,7 @@ function AppShell(props: AppProps) {
             ? <Text>{replInput}<Text inverse> </Text></Text>
             : <Text dimColor>Type a command... (/ask, /filter, /theme)<Text inverse> </Text></Text>
         ) : (
-          <Text dimColor>{replInput || 'Press : for commands, / to search'}</Text>
+          <Text dimColor>{replInput || 'Press : for commands, / to search, F to filter'}</Text>
         )}
       </Box>
 

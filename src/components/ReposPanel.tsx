@@ -4,25 +4,6 @@ import { useAppState } from '../state/AppState.js'
 import { useKeymap } from '../hooks/useKeymap.js'
 import { useRepos } from '../hooks/useRepos.js'
 import { Spinner } from './design-system/Spinner.js'
-import type { Repository } from '../types.js'
-
-function scanStatusColor(status: Repository['scan_status']): string {
-  switch (status) {
-    case 'completed': return 'green'
-    case 'scanning': return 'yellow'
-    case 'failed': return 'red'
-    case 'idle': return 'gray'
-  }
-}
-
-function scanStatusLabel(status: Repository['scan_status']): string {
-  switch (status) {
-    case 'completed': return '✓ completed'
-    case 'scanning': return '⟳ scanning'
-    case 'failed': return '✗ failed'
-    case 'idle': return '○ idle'
-  }
-}
 
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '…' : str
@@ -89,13 +70,12 @@ export function ReposPanel() {
         <Box width={20}><Text bold dimColor>Nickname</Text></Box>
         <Box flexGrow={1}><Text bold dimColor>URI</Text></Box>
         <Box width={12}><Text bold dimColor>Source</Text></Box>
-        <Box width={14}><Text bold dimColor>Status</Text></Box>
+        <Box width={10}><Text bold dimColor>Findings</Text></Box>
       </Box>
 
       {repos.map((repo, i) => {
         const isSelected = i === cursorIndex
         const isExpanded = repo.id === expandedId
-        const statusColor = scanStatusColor(repo.scan_status)
 
         return (
           <Box key={repo.id} flexDirection="column">
@@ -111,12 +91,14 @@ export function ReposPanel() {
               <Box width={12}>
                 <Text dimColor={!isSelected} inverse={isSelected}>{repo.source_control}</Text>
               </Box>
-              <Box width={14}>
-                {repo.scan_status === 'scanning' ? (
-                  <Spinner label="scanning" interval={120} />
-                ) : (
-                  <Text color={statusColor} inverse={isSelected}>{scanStatusLabel(repo.scan_status)}</Text>
-                )}
+              <Box width={10}>
+                <Text dimColor={!isSelected} inverse={isSelected}>
+                  {repo.finding_counts.critical > 0 && <Text color="red">{repo.finding_counts.critical}C </Text>}
+                  {repo.finding_counts.high > 0 && <Text color="yellow">{repo.finding_counts.high}H</Text>}
+                  {repo.finding_counts.critical === 0 && repo.finding_counts.high === 0 && (
+                    <Text dimColor>{repo.finding_counts.total}</Text>
+                  )}
+                </Text>
               </Box>
             </Box>
 
@@ -124,8 +106,14 @@ export function ReposPanel() {
               <Box paddingX={3} paddingY={1} flexDirection="column">
                 <Text dimColor>URI: {repo.uri}</Text>
                 <Text dimColor>Source Control: {repo.source_control}</Text>
-                <Text dimColor>Scan Status: </Text>
-                <Text color={statusColor}>{repo.scan_status}</Text>
+                <Text dimColor>Status: {repo.status}{repo.active ? '' : ' (inactive)'}</Text>
+                <Box marginTop={1}>
+                  <Text dimColor>Findings: </Text>
+                  <Text color="red">{repo.finding_counts.critical}C </Text>
+                  <Text color="yellow">{repo.finding_counts.high}H </Text>
+                  <Text color="blue">{repo.finding_counts.medium}M </Text>
+                  <Text dimColor>{repo.finding_counts.low}L</Text>
+                </Box>
                 <Box marginTop={1}>
                   <Text dimColor>[Esc] collapse</Text>
                 </Box>

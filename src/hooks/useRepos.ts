@@ -17,7 +17,7 @@ export function useRepos() {
       try {
         const config = await loadConfig()
         const api = new PlexicusApi({ baseUrl: config.serverUrl, token: state.token ?? config.token })
-        const repos = await api.getRepositories()
+        const { repos } = await api.getRepositories()
         dispatch({ type: 'repos/set', payload: repos })
       } catch (err) {
         dispatch({ type: 'repos/loading', payload: false })

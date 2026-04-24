@@ -1,23 +1,81 @@
-[
-  {
-    "id": "r-001",
-    "nickname": "api-service",
-    "uri": "https://github.com/plexicus/api-service",
-    "source_control": "github",
-    "scan_status": "completed"
-  },
-  {
-    "id": "r-002",
-    "nickname": "backend-core",
-    "uri": "https://github.com/plexicus/backend-core",
-    "source_control": "github",
-    "scan_status": "scanning"
-  },
-  {
-    "id": "r-003",
-    "nickname": "frontend-app",
-    "uri": "https://github.com/plexicus/frontend-app",
-    "source_control": "github",
-    "scan_status": "idle"
+{
+  "data": [
+    {
+      "id": "r-001",
+      "attributes": {
+        "nickname": "api-service",
+        "uri": "https://github.com/plexicus/api-service",
+        "active": true,
+        "repo_type": "github",
+        "status": "active",
+        "data": {
+          "branch": "main",
+          "source_control": "github",
+          "tags": []
+        },
+        "findings": {
+          "total": 42,
+          "critical": 3,
+          "high": 10,
+          "medium": 18,
+          "low": 11,
+          "info": 0
+        }
+      }
+    },
+    {
+      "id": "r-002",
+      "attributes": {
+        "nickname": "backend-core",
+        "uri": "https://github.com/plexicus/backend-core",
+        "active": true,
+        "repo_type": "github",
+        "status": "active",
+        "data": {
+          "branch": "main",
+          "source_control": "github",
+          "tags": []
+        },
+        "findings": {
+          "total": 28,
+          "critical": 1,
+          "high": 8,
+          "medium": 12,
+          "low": 7,
+          "info": 0
+        }
+      }
+    },
+    {
+      "id": "r-003",
+      "attributes": {
+        "nickname": "frontend-app",
+        "uri": "https://github.com/plexicus/frontend-app",
+        "active": true,
+        "repo_type": "github",
+        "status": "active",
+        "data": {
+          "branch": "main",
+          "source_control": "github",
+          "tags": []
+        },
+        "findings": {
+          "total": 15,
+          "critical": 0,
+          "high": 3,
+          "medium": 8,
+          "low": 4,
+          "info": 0
+        }
+      }
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "pageCount": 1,
+      "pageSize": 25,
+      "total": 3
+    }
   }
-]
+}

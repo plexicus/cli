@@ -139,19 +139,23 @@ Commander entrypoint with 4 subcommands: default (TUI), `login`, `repos`, `confi
 Pure `useReducer` + React Context. `AppState.tsx` exports `AppStateProvider` + `useAppState`. `actions.ts` has the full discriminated union `Action` type. No direct state mutation anywhere.
 
 Key state fields:
-- `inputMode: 'navigation' | 'repl' | 'chat' | 'login'` — gates ALL keyboard input
+- `inputMode: 'navigation' | 'repl' | 'chat' | 'login' | 'filter'` — gates ALL keyboard input
 - `fuzzyOpen: boolean` — controls FuzzyPicker; also forces `inputMode: 'repl'` when true
+- `filterOpen: boolean` — controls FilterModal; `filter/open` sets `inputMode: 'filter'`
 - `pendingChatMessage: string | null` — bridges `/ask <question>` → ChatSidebar auto-send
-- `findingsFilter: { repo?, severities? }` — applied client-side via `useMemo` in `useFindings`
+- `findingsFilter: FindingsFilter` — full server-side filter shape (15+ dimensions); dispatching `findings/filter` resets `findingsPage` to 0
+- `findingsPage: number` — 0-indexed current page; `useFindings` passes to API
+- `findingsTotal / findingsPageCount` — populated from `meta.pagination` in API response
 
 ### Keyboard input architecture (`src/components/App.tsx`, `src/hooks/useKeymap.ts`)
 **Critical**: The REPL bar does NOT use `ink-text-input`. It uses direct `useInput` char capture in `App.tsx` because `ink-text-input` v6 focus is unreliable in tmux. Characters accumulate in `replInput` state; a `replInputRef` (updated each render) provides stale-closure-safe access for the Enter handler.
 
 Key bindings by mode:
-- **Navigation**: `j/k` (move), `gg/G` (top/bottom), `Enter` (select), `r/p/s/f` (actions), `/` (fuzzy), `:` (REPL), `c` (chat toggle), `?` (help), `1/2/Tab` (panels)
+- **Navigation**: `j/k` (move), `gg/G` (top/bottom), `Enter` (select), `r/p/s/f` (actions), `F` (filter modal), `/` (fuzzy), `:` (REPL), `c` (chat toggle), `?` (help), `1/2/Tab` (panels)
 - **REPL**: printable chars → accumulate; `Backspace` → delete; `Enter` → submit; `↑/↓` → history; `Esc` → exit
 - **Chat**: `Esc` → close sidebar (blocked when help overlay open via `helpOpen` prop)
 - **Fuzzy**: `↑/↓` → cursor; `Enter` → select; `Esc` → cancel
+- **Filter**: `↑/↓` → navigate sections; `j/k` → navigate within checkbox sections; `Space` → toggle; `Enter` → apply; `r` → reset; `Esc` → cancel
 
 `?` opens help in `navigation` and `chat` modes only (typeable in repl). Ink has no `stopPropagation` — when `?` opens the help overlay, `ChatSidebar` retroactively clears any leaked `?` via `useEffect` and guards its `useInput` with `if (helpOpen) return` to prevent Escape from closing the sidebar while help is shown.
 
@@ -159,6 +163,14 @@ Key bindings by mode:
 `App.tsx` → `AuthGate` (FirstRunWizard → LoginForm → AppShell). `AppShell`: header, FindingsPanel or ReposPanel (left), ChatSidebar (right, optional), DetailPane/DiffView (conditional), REPL bar (bottom).
 
 `FuzzyPicker` renders inside `FindingsPanel` when `state.fuzzyOpen && state.activePanel === 'findings'`.
+
+`FilterModal` renders in `AppShell` when `state.filterOpen`. It holds a local draft copy of `FindingsFilter`; dispatches `findings/filter` only on Apply (Enter). Repo fuzzy search queries `state.repos` with local useMemo filter.
+
+### API response format (JSON:API)
+All findings and repo responses are `{ data: [{ id, attributes: {...} }], meta: { pagination: {...} } }`. `plexicusApi.ts` parses these via Zod schemas and maps to flat `Finding`/`Repository` types. Field renames: `name→title`, `file→file_path`, `cvss_score→cvssv3_score`, `created_at→date`, `repo→repo_id+repo_nickname`, `cve_id→cve`. Status values: `open | mitigated | enriched` (no more `false_positive` — use `is_false_positive: boolean`).
+
+### Server-side filtering (`src/hooks/useFindings.ts`)
+`useEffect` watches `[state.isAuthenticated, state.findingsFilter, state.findingsPage]`. Uses `AbortController` to cancel stale requests. Builds a `repoMap` from `state.repos` for `repo_nickname` denormalization. Pagination comes from `meta.pagination` in the response.
 
 ### API and mock mode (`src/services/plexicusApi.ts`)
 Set `MOCK_PLEXICUS=1` to load fixture data from `tests/fixtures/plexicus/` instead of making HTTP calls. All responses validated via Zod schemas in `src/services/apiSchemas.ts`.

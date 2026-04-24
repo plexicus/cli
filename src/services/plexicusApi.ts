@@ -1,9 +1,10 @@
 import type { Finding, Repository, Remediation, PR, ApiToken, SessionUser } from '../types.js'
 import {
-  FindingSchema, FindingsListSchema, RepositorySchema, RepositoriesListSchema,
-  RemediationSchema, RemediationsListSchema, PRSchema, ApiTokenSchema, ApiTokensListSchema,
-  SessionUserSchema, LoginResponseSchema,
+  FindingsResponseSchema, RepositoriesResponseSchema,
+  RemediationSchema, RemediationsListSchema, PRSchema,
+  ApiTokenSchema, ApiTokensListSchema, SessionUserSchema, LoginResponseSchema,
 } from './apiSchemas.js'
+import type { FindingsFilter } from '../state/actions.js'
 import { PlexicusApiError, PlexicusAuthError } from '../utils/errors.js'
 
 interface ApiConfig {
@@ -17,7 +18,17 @@ interface LoginResponse {
   requires_2fa?: boolean
 }
 
-// When MOCK_PLEXICUS=1, load fixture instead of fetching
+interface FindingsResult {
+  findings: Finding[]
+  total: number
+  pageCount: number
+}
+
+interface ReposResult {
+  repos: Repository[]
+  total: number
+}
+
 const MOCK_MODE = process.env.MOCK_PLEXICUS === '1'
 
 async function loadFixture(name: string): Promise<unknown> {
@@ -25,6 +36,89 @@ async function loadFixture(name: string): Promise<unknown> {
     with: { type: 'json' },
   })
   return data
+}
+
+function buildFilterQuery(filter: FindingsFilter): URLSearchParams {
+  const qs = new URLSearchParams()
+
+  if (filter.severities?.length) {
+    qs.set('filters[severity]', filter.severities.join(','))
+  }
+  if (filter.repository_ids?.length) {
+    qs.set('filters[repository]', filter.repository_ids.join(','))
+  }
+  if (filter.statuses?.length) {
+    qs.set('filters[status]', filter.statuses.join(','))
+  }
+  if (filter.types?.length) {
+    qs.set('filters[type]', filter.types.join(','))
+  }
+  if (filter.cvss_gt !== undefined) {
+    qs.set('filters[cvssv3_score_gt]', String(filter.cvss_gt))
+  }
+  if (filter.cvss_lt !== undefined) {
+    qs.set('filters[cvssv3_score_lt]', String(filter.cvss_lt))
+  }
+  if (filter.priority_gt !== undefined) {
+    qs.set('filters[priority_gt]', String(filter.priority_gt))
+  }
+  if (filter.priority_lt !== undefined) {
+    qs.set('filters[priority_lt]', String(filter.priority_lt))
+  }
+  if (filter.cwe_ids?.length) {
+    qs.set('filters[cwe]', filter.cwe_ids.join(','))
+  }
+  if (filter.policy_names?.length) {
+    qs.set('filters[policy_name]', filter.policy_names.join(','))
+  }
+  if (filter.languages?.length) {
+    qs.set('filters[language]', filter.languages.join(','))
+  }
+  if (filter.categories?.length) {
+    qs.set('filters[category]', filter.categories.join(','))
+  }
+  if (filter.is_false_positive) {
+    qs.set('filters[is_false_positive]', '1')
+  }
+  if (filter.finding_type) {
+    qs.set('finding_type', filter.finding_type)
+  }
+
+  return qs
+}
+
+function parseFindings(raw: unknown, repoMap?: Map<string, string>): FindingsResult {
+  const parsed = FindingsResponseSchema.parse(raw)
+  const findings: Finding[] = parsed.data.map(item => ({
+    id: item.id,
+    repo_nickname: repoMap?.get(item.attributes.repo_id) ?? null,
+    ...item.attributes,
+  }))
+  return {
+    findings,
+    total: parsed.meta?.pagination.total ?? findings.length,
+    pageCount: parsed.meta?.pagination.pageCount ?? 1,
+  }
+}
+
+function parseRepos(raw: unknown): ReposResult {
+  const parsed = RepositoriesResponseSchema.parse(raw)
+  const repos: Repository[] = parsed.data.map(item => ({
+    id: item.id,
+    nickname: item.attributes.nickname,
+    uri: item.attributes.uri,
+    active: item.attributes.active,
+    repo_type: item.attributes.repo_type,
+    status: item.attributes.status,
+    source_control: item.attributes.data?.source_control ?? item.attributes.repo_type,
+    finding_counts: item.attributes.findings ?? {
+      total: 0, critical: 0, high: 0, medium: 0, low: 0, info: 0,
+    },
+  }))
+  return {
+    repos,
+    total: parsed.meta?.pagination.total ?? repos.length,
+  }
 }
 
 export class PlexicusApi {
@@ -96,25 +190,38 @@ export class PlexicusApi {
     return this.fetch<LoginResponse>('POST', '/verify-session', { otp }, LoginResponseSchema)
   }
 
-  async getFindings(params?: { repo?: string; severities?: string[]; status?: string }): Promise<Finding[]> {
+  async getFindings(
+    filter: FindingsFilter = {},
+    page = 0,
+    repoMap?: Map<string, string>,
+  ): Promise<FindingsResult> {
     if (MOCK_MODE) {
       const data = await loadFixture('findings')
-      return FindingsListSchema.parse(data)
+      return parseFindings(data, repoMap)
     }
-    const qs = new URLSearchParams()
-    if (params?.repo) qs.set('repo', params.repo)
-    if (params?.severities?.length) qs.set('severity', params.severities.join(','))
-    if (params?.status) qs.set('status', params.status)
+    const qs = buildFilterQuery(filter)
+    qs.set('pagination_page', String(page))
+    qs.set('pagination_pageSize', '25')
+    qs.set('pagination_with_count', 'true')
+    qs.set('pagination_active', 'true')
     const query = qs.toString() ? `?${qs}` : ''
-    return this.fetch<Finding[]>('GET', `/findings${query}`, undefined, FindingsListSchema)
+    const raw = await this.fetch<unknown>('GET', `/findings${query}`)
+    return parseFindings(raw, repoMap)
   }
 
   async getFinding(id: string): Promise<Finding> {
     if (MOCK_MODE) {
       const data = await loadFixture('finding-detail')
-      return FindingSchema.parse(data)
+      const result = parseFindings(data)
+      const found = result.findings.find(f => f.id === id)
+      if (!found) throw new Error(`Finding ${id} not found in fixture`)
+      return found
     }
-    return this.fetch<Finding>('GET', `/findings/${id}`, undefined, FindingSchema)
+    const raw = await this.fetch<unknown>('GET', `/findings/${id}`)
+    const result = parseFindings(raw)
+    const found = result.findings[0]
+    if (!found) throw new PlexicusApiError(`Finding ${id} not found`, 404, `/findings/${id}`)
+    return found
   }
 
   async markMitigated(id: string): Promise<void> {
@@ -141,7 +248,7 @@ export class PlexicusApi {
       return RemediationsListSchema.parse([data])
     }
     const query = findingId ? `?finding_id=${findingId}` : ''
-    return this.fetch<Remediation[]>('GET', `/remediations${query}`, undefined, RemediationsListSchema)
+    return this.fetch<Remediation[]>(`GET`, `/remediations${query}`, undefined, RemediationsListSchema)
   }
 
   async createPR(remediationId: string): Promise<PR> {
@@ -151,12 +258,18 @@ export class PlexicusApi {
     return this.fetch<PR>('POST', '/pull_request', { remediation_id: remediationId }, PRSchema)
   }
 
-  async getRepositories(): Promise<Repository[]> {
+  async getRepositories(page = 0): Promise<ReposResult> {
     if (MOCK_MODE) {
       const data = await loadFixture('repos')
-      return RepositoriesListSchema.parse(data)
+      return parseRepos(data)
     }
-    return this.fetch<Repository[]>('GET', '/repositories', undefined, RepositoriesListSchema)
+    const qs = new URLSearchParams({
+      pagination_page: String(page),
+      pagination_pageSize: '100',
+      pagination_with_count: 'true',
+    })
+    const raw = await this.fetch<unknown>('GET', `/repositories?${qs}`)
+    return parseRepos(raw)
   }
 
   async getApiTokens(): Promise<ApiToken[]> {

@@ -4,19 +4,21 @@ import { useAppState } from '../state/AppState.js'
 import { severityBadge, severityColor, cvssColor } from '../utils/severity.js'
 import type { Finding } from '../types.js'
 
-function statusLabel(status: Finding['status']): string {
-  switch (status) {
+function statusLabel(finding: Finding): string {
+  if (finding.is_false_positive) return '⊘ false positive'
+  switch (finding.status) {
     case 'open': return 'open'
     case 'mitigated': return '✓ mitigated'
-    case 'false_positive': return '⊘ false positive'
+    case 'enriched': return '⊕ enriched'
   }
 }
 
-function statusColor(status: Finding['status']): string {
-  switch (status) {
+function statusColor(finding: Finding): string {
+  if (finding.is_false_positive) return 'gray'
+  switch (finding.status) {
     case 'open': return 'yellow'
     case 'mitigated': return 'green'
-    case 'false_positive': return 'gray'
+    case 'enriched': return 'cyan'
   }
 }
 
@@ -42,28 +44,16 @@ export function DetailPane({ onRemediate, onPR, onSuppress, onFalsePositive }: D
       dispatch({ type: 'findings/select', payload: null })
       return
     }
-    if (input === 'r') {
-      onRemediate?.(finding)
-      return
-    }
-    if (input === 'p') {
-      onPR?.(finding)
-      return
-    }
-    if (input === 's') {
-      onSuppress?.(finding)
-      return
-    }
-    if (input === 'f') {
-      onFalsePositive?.(finding)
-      return
-    }
+    if (input === 'r') { onRemediate?.(finding); return }
+    if (input === 'p') { onPR?.(finding); return }
+    if (input === 's') { onSuppress?.(finding); return }
+    if (input === 'f') { onFalsePositive?.(finding); return }
   })
 
   if (!finding) return null
 
   const sevColor = severityColor(finding.severity)
-  const cvssScore = finding.cvss_score
+  const cvssScore = finding.cvssv3_score
 
   return (
     <Box
@@ -78,15 +68,15 @@ export function DetailPane({ onRemediate, onPR, onSuppress, onFalsePositive }: D
       <Box>
         <Text color={sevColor} bold>{severityBadge(finding.severity)}</Text>
         <Text> </Text>
-        <Text bold>{finding.name}</Text>
+        <Text bold>{finding.title}</Text>
       </Box>
 
-      {/* CVE + CVSS row */}
+      {/* CVE + CVSS + status row */}
       <Box marginTop={1}>
-        {finding.cve_id && (
+        {finding.cve && (
           <Box marginRight={2}>
             <Text dimColor>CVE: </Text>
-            <Text color="cyan">{finding.cve_id}</Text>
+            <Text color="cyan">{finding.cve}</Text>
           </Box>
         )}
         <Box marginRight={2}>
@@ -97,23 +87,53 @@ export function DetailPane({ onRemediate, onPR, onSuppress, onFalsePositive }: D
             <Text dimColor>N/A</Text>
           )}
         </Box>
-        <Box>
+        <Box marginRight={2}>
           <Text dimColor>Status: </Text>
-          <Text color={statusColor(finding.status)}>{statusLabel(finding.status)}</Text>
+          <Text color={statusColor(finding)}>{statusLabel(finding)}</Text>
         </Box>
+        {finding.prioritization_value !== null && (
+          <Box>
+            <Text dimColor>Priority: </Text>
+            <Text>{finding.prioritization_value}</Text>
+          </Box>
+        )}
       </Box>
 
       {/* Repo row */}
       <Box>
         <Text dimColor>Repo: </Text>
-        <Text>{finding.repo}</Text>
+        <Text>{finding.repo_nickname ?? finding.repo_id}</Text>
+        {finding.type && (
+          <>
+            <Text dimColor>  Type: </Text>
+            <Text>{finding.type}</Text>
+          </>
+        )}
       </Box>
 
+      {/* CWE + EPSS */}
+      {(finding.cwe !== null || finding.estimated_epss !== null) && (
+        <Box>
+          {finding.cwe !== null && (
+            <Box marginRight={2}>
+              <Text dimColor>CWE: </Text>
+              <Text>{finding.cwe}</Text>
+            </Box>
+          )}
+          {finding.estimated_epss !== null && (
+            <Box>
+              <Text dimColor>EPSS: </Text>
+              <Text>{(finding.estimated_epss * 100).toFixed(2)}%</Text>
+            </Box>
+          )}
+        </Box>
+      )}
+
       {/* File + line */}
-      {finding.file && (
+      {finding.file_path && (
         <Box>
           <Text dimColor>File: </Text>
-          <Text color="blue">{finding.file}</Text>
+          <Text color="blue">{finding.file_path}</Text>
           {finding.line !== null && (
             <>
               <Text dimColor>:</Text>

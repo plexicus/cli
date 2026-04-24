@@ -7,13 +7,7 @@ import { Spinner } from './design-system/Spinner.js'
 import { FuzzyPicker } from './design-system/FuzzyPicker.js'
 import { severityBadge, severityColor } from '../utils/severity.js'
 import type { Finding } from '../types.js'
-
-const PAGE_SIZE = 20
-
-interface FindingsPanelProps {
-  repo?: string
-  cve?: string
-}
+import type { FindingsFilter } from '../state/actions.js'
 
 function formatDate(dateStr: string): string {
   return dateStr.slice(0, 10)
@@ -23,42 +17,38 @@ function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '…' : str
 }
 
+function isFilterActive(filter: FindingsFilter): boolean {
+  return Object.values(filter as Record<string, unknown>).some(v => {
+    if (Array.isArray(v)) return v.length > 0
+    return v !== undefined && v !== null && v !== false
+  })
+}
+
+interface FindingsPanelProps {
+  repo?: string
+  cve?: string
+}
+
 export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
   const { state, dispatch } = useAppState()
-  const { findings, loading } = useFindings({ repo, cve })
-  const [page, setPage] = useState(0)
+  const { findings, loading } = useFindings({ cve })
   const [cursorIndex, setCursorIndex] = useState(0)
 
-  // Reset cursor and page whenever the filter changes so the list stays coherent
-  useEffect(() => {
-    setPage(0)
-    setCursorIndex(0)
-  }, [state.findingsFilter])
+  const pageFindings = findings
+  const hasFilter = isFilterActive(state.findingsFilter)
 
-  const pageCount = Math.ceil(findings.length / PAGE_SIZE)
-  const pageFindings = findings.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+  // Reset cursor when page or filter changes
+  useEffect(() => {
+    setCursorIndex(0)
+  }, [state.findingsPage, state.findingsFilter])
 
   const handleDown = useCallback(() => {
-    setCursorIndex(i => {
-      if (i < pageFindings.length - 1) return i + 1
-      if (page < pageCount - 1) {
-        setPage(p => p + 1)
-        return 0
-      }
-      return i
-    })
-  }, [pageFindings.length, page, pageCount])
+    setCursorIndex(i => Math.min(i + 1, pageFindings.length - 1))
+  }, [pageFindings.length])
 
   const handleUp = useCallback(() => {
-    setCursorIndex(i => {
-      if (i > 0) return i - 1
-      if (page > 0) {
-        setPage(p => p - 1)
-        return PAGE_SIZE - 1
-      }
-      return i
-    })
-  }, [page])
+    setCursorIndex(i => Math.max(i - 1, 0))
+  }, [])
 
   const handleSelect = useCallback(() => {
     const finding = pageFindings[cursorIndex]
@@ -73,7 +63,6 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
     const finding = pageFindings[cursorIndex]
     if (!finding) return
     dispatch({ type: 'findings/select', payload: finding.id })
-    // Remediation triggered from DetailPane
   }, [pageFindings, cursorIndex, dispatch])
 
   const handleSuppress = useCallback(async () => {
@@ -101,8 +90,7 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
       const config = await loadConfig()
       const api = new PlexicusApi({ baseUrl: config.serverUrl, token: state.token ?? config.token })
       await api.toggleFalsePositive(finding.id)
-      const newStatus = finding.status === 'false_positive' ? 'open' as const : 'false_positive' as const
-      const updated = { ...finding, status: newStatus }
+      const updated = { ...finding, is_false_positive: !finding.is_false_positive }
       dispatch({ type: 'findings/update', payload: updated })
     } catch (err) {
       dispatch({ type: 'ui/setError', payload: err instanceof Error ? err.message : 'Failed to toggle false positive' })
@@ -118,8 +106,16 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
       onRemediate: handleRemediate,
       onSuppress: handleSuppress,
       onFalsePositive: handleFalsePositive,
-      onNextPage: () => setPage(p => Math.min(p + 1, pageCount - 1)),
-      onPrevPage: () => setPage(p => Math.max(p - 1, 0)),
+      onNextPage: () => {
+        if (state.findingsPage < state.findingsPageCount - 1) {
+          dispatch({ type: 'findings/setPage', payload: state.findingsPage + 1 })
+        }
+      },
+      onPrevPage: () => {
+        if (state.findingsPage > 0) {
+          dispatch({ type: 'findings/setPage', payload: state.findingsPage - 1 })
+        }
+      },
     },
     { inputMode: state.inputMode, isActive: state.activePanel === 'findings' },
   )
@@ -128,7 +124,7 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
     return (
       <FuzzyPicker
         items={findings}
-        getLabel={f => `${f.name} (${f.repo})`}
+        getLabel={(f: Finding) => `${f.title} (${f.repo_nickname ?? f.repo_id})`}
         onSelect={f => {
           dispatch({ type: 'findings/select', payload: f.id })
           dispatch({ type: 'ui/setFuzzyOpen', payload: false })
@@ -153,7 +149,6 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
         <Text color="yellow">No findings matching current filter</Text>
         <Text dimColor>
           Filter: {state.findingsFilter.severities?.join(', ') ?? 'all'}
-          {state.findingsFilter.repo ? ` | repo: ${state.findingsFilter.repo}` : ''}
         </Text>
       </Box>
     )
@@ -164,7 +159,10 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
       {/* Column headers */}
       <Box paddingX={1}>
         <Box width={8}><Text bold dimColor>SEVER</Text></Box>
-        <Box flexGrow={1}><Text bold dimColor>CVE / Name</Text></Box>
+        <Box flexGrow={1}>
+          <Text bold dimColor>CVE / Title</Text>
+          {hasFilter && <Text color="cyan"> ●</Text>}
+        </Box>
         <Box width={16}><Text bold dimColor>Repo</Text></Box>
         <Box width={12}><Text bold dimColor>Date</Text></Box>
       </Box>
@@ -174,6 +172,7 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
         const isSelected = i === cursorIndex
         const isDetailSelected = finding.id === state.selectedFindingId
         const color = severityColor(finding.severity)
+        const repoDisplay = finding.repo_nickname ?? finding.repo_id
 
         return (
           <Box key={finding.id} paddingX={1}>
@@ -182,14 +181,14 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
             </Box>
             <Box flexGrow={1}>
               <Text inverse={isSelected}>
-                {truncate(finding.cve_id ? `${finding.cve_id} ${finding.name}` : finding.name, 40)}
+                {truncate(finding.cve ? `${finding.cve} ${finding.title}` : finding.title, 40)}
               </Text>
             </Box>
             <Box width={16}>
-              <Text dimColor={!isSelected} inverse={isSelected}>{truncate(finding.repo, 15)}</Text>
+              <Text dimColor={!isSelected} inverse={isSelected}>{truncate(repoDisplay, 15)}</Text>
             </Box>
             <Box width={12}>
-              <Text dimColor={!isSelected} inverse={isSelected}>{formatDate(finding.created_at)}</Text>
+              <Text dimColor={!isSelected} inverse={isSelected}>{formatDate(finding.date)}</Text>
             </Box>
             {isDetailSelected && <Text color="cyan"> ◀</Text>}
           </Box>
@@ -199,14 +198,14 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
       {/* Pagination indicator */}
       <Box paddingX={1} marginTop={1}>
         <Text dimColor>
-          {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, findings.length)} of {findings.length} findings
-          {pageCount > 1 ? ` (page ${page + 1}/${pageCount} — ] next, [ prev)` : ''}
+          Page {state.findingsPage + 1}/{state.findingsPageCount} — {state.findingsTotal} total findings
+          {state.findingsPageCount > 1 ? ' (] next, [ prev)' : ''}
         </Text>
       </Box>
 
       {/* Action hints */}
       <Box paddingX={1}>
-        <Text dimColor>[Enter]detail [r]emediate [s]uppress [f]alse-pos [c]hat [/]search [?]help</Text>
+        <Text dimColor>[Enter]detail [r]emediate [s]uppress [f]alse-pos [F]filter [c]hat [/]search [?]help</Text>
       </Box>
     </Box>
   )

@@ -8,9 +8,10 @@ export function buildFindingsSystemPrompt(findings: Finding[], maxItems = 20): s
     .slice(0, maxItems)
 
   const findingLines = prioritized.map(f => {
-    const cve = f.cve_id ? ` (${f.cve_id})` : ''
-    const loc = f.file ? ` at ${f.file}${f.line ? `:${f.line}` : ''}` : ''
-    return `- [${f.severity.toUpperCase()}] ${f.name}${cve} in ${f.repo}${loc}`
+    const cve = f.cve ? ` (${f.cve})` : ''
+    const loc = f.file_path ? ` at ${f.file_path}${f.line ? `:${f.line}` : ''}` : ''
+    const repo = f.repo_nickname ?? f.repo_id
+    return `- [${f.severity.toUpperCase()}] ${f.title}${cve} in ${repo}${loc}`
   })
 
   return `You are a security assistant for the Plexicus ASPM platform.

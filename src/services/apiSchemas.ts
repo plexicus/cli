@@ -1,25 +1,85 @@
 import { z } from 'zod'
 
-export const FindingSchema = z.object({
-  id: z.string(),
+const FindingAttributesSchema = z.object({
+  title: z.string(),
   severity: z.enum(['critical', 'high', 'medium', 'low', 'informational']),
-  name: z.string(),
-  cve_id: z.string().nullable(),
-  repo: z.string(),
-  file: z.string().nullable(),
-  line: z.number().nullable(),
-  cvss_score: z.number().nullable(),
-  status: z.enum(['open', 'mitigated', 'false_positive']),
-  description: z.string().nullable(),
-  created_at: z.string(),
+  severity_numerical: z.number().nullable().default(null),
+  status: z.enum(['open', 'mitigated', 'enriched']).default('open'),
+  type: z.enum(['SAST', 'SCA', 'DAST']).nullable().default(null),
+  category: z.string().nullable().default(null),
+  tool: z.string().nullable().default(null),
+  language: z.string().nullable().default(null),
+  file_path: z.string().nullable().default(null),
+  line: z.number().nullable().default(null),
+  cwe: z.number().nullable().default(null),
+  extra_cwe: z.array(z.number()).default([]),
+  cvssv3_score: z.number().nullable().default(null),
+  cvssv4_score: z.number().nullable().default(null),
+  prioritization_value: z.number().nullable().default(null),
+  effort_for_fixing: z.number().nullable().default(null),
+  exploitability: z.number().nullable().default(null),
+  impact: z.number().nullable().default(null),
+  confidence: z.number().nullable().default(null),
+  estimated_epss: z.number().nullable().default(null),
+  repo_id: z.string(),
+  date: z.string(),
+  is_false_positive: z.boolean().default(false),
+  is_duplicate: z.boolean().default(false),
+  is_sandbox: z.boolean().default(false),
+  owasps: z.array(z.string()).default([]),
+  policy_rules: z.array(z.unknown()).default([]),
+  tags: z.array(z.string()).default([]),
+  cve: z.string().nullable().default(null),
+  description: z.string().nullable().default(null),
+  mitigation: z.string().nullable().default(null),
 })
 
-export const RepositorySchema = z.object({
+export const FindingItemSchema = z.object({
   id: z.string(),
+  attributes: FindingAttributesSchema,
+})
+
+const PaginationSchema = z.object({
+  page: z.number(),
+  pageCount: z.number(),
+  pageSize: z.number(),
+  total: z.number(),
+})
+
+export const FindingsResponseSchema = z.object({
+  data: z.array(FindingItemSchema),
+  meta: z.object({ pagination: PaginationSchema }).optional(),
+})
+
+const RepoAttributesSchema = z.object({
   nickname: z.string(),
   uri: z.string(),
-  source_control: z.string(),
-  scan_status: z.enum(['idle', 'scanning', 'completed', 'failed']),
+  active: z.boolean().default(true),
+  repo_type: z.string().default('github'),
+  status: z.string().default('active'),
+  data: z.object({
+    branch: z.string().optional(),
+    source_control: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+  }).optional(),
+  findings: z.object({
+    total: z.number().default(0),
+    critical: z.number().default(0),
+    high: z.number().default(0),
+    medium: z.number().default(0),
+    low: z.number().default(0),
+    info: z.number().default(0),
+  }).optional(),
+})
+
+export const RepoItemSchema = z.object({
+  id: z.string(),
+  attributes: RepoAttributesSchema,
+})
+
+export const RepositoriesResponseSchema = z.object({
+  data: z.array(RepoItemSchema),
+  meta: z.object({ pagination: PaginationSchema }).optional(),
 })
 
 export const RemediationSchema = z.object({
@@ -43,6 +103,9 @@ export const ApiTokenSchema = z.object({
   created_at: z.string(),
 })
 
+export const ApiTokensListSchema = z.array(ApiTokenSchema)
+export const RemediationsListSchema = z.array(RemediationSchema)
+
 export const SessionUserSchema = z.object({
   id: z.string(),
   email: z.string(),
@@ -53,8 +116,3 @@ export const LoginResponseSchema = z.object({
   token_type: z.string().default('Bearer'),
   requires_2fa: z.boolean().optional(),
 })
-
-export const FindingsListSchema = z.array(FindingSchema)
-export const RepositoriesListSchema = z.array(RepositorySchema)
-export const RemediationsListSchema = z.array(RemediationSchema)
-export const ApiTokensListSchema = z.array(ApiTokenSchema)
