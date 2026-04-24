@@ -1,0 +1,23 @@
+[
+  {
+    "id": "r-001",
+    "nickname": "api-service",
+    "uri": "https://github.com/plexicus/api-service",
+    "source_control": "github",
+    "scan_status": "completed"
+  },
+  {
+    "id": "r-002",
+    "nickname": "backend-core",
+    "uri": "https://github.com/plexicus/backend-core",
+    "source_control": "github",
+    "scan_status": "scanning"
+  },
+  {
+    "id": "r-003",
+    "nickname": "frontend-app",
+    "uri": "https://github.com/plexicus/frontend-app",
+    "source_control": "github",
+    "scan_status": "idle"
+  }
+]

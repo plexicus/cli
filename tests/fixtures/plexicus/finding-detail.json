@@ -1,0 +1,13 @@
+{
+  "id": "f-001",
+  "severity": "critical",
+  "name": "SQL Injection in user login",
+  "cve_id": "CVE-2023-1234",
+  "repo": "api-service",
+  "file": "src/auth/login.py",
+  "line": 42,
+  "cvss_score": 9.8,
+  "status": "open",
+  "description": "User-supplied input is concatenated directly into SQL query without sanitization. An attacker can bypass authentication or extract sensitive data from the database.",
+  "created_at": "2024-01-15T10:30:00Z"
+}

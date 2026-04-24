@@ -1,0 +1,7 @@
+{
+  "id": "rem-001",
+  "finding_id": "f-001",
+  "diff": "--- a/src/auth/login.py\n+++ b/src/auth/login.py\n@@ -40,7 +40,7 @@\n def login(email, password):\n-    query = f\"SELECT * FROM users WHERE email='{email}' AND password='{password}'\"\n+    query = \"SELECT * FROM users WHERE email=? AND password=?\"\n+    cursor.execute(query, (email, password))\n     result = cursor.execute(query)\n     return result.fetchone()",
+  "status": "ready",
+  "auto_create": false
+}

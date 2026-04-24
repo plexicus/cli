@@ -1,0 +1,67 @@
+[
+  {
+    "id": "f-001",
+    "severity": "critical",
+    "name": "SQL Injection in user login",
+    "cve_id": "CVE-2023-1234",
+    "repo": "api-service",
+    "file": "src/auth/login.py",
+    "line": 42,
+    "cvss_score": 9.8,
+    "status": "open",
+    "description": "User-supplied input is concatenated directly into SQL query without sanitization.",
+    "created_at": "2024-01-15T10:30:00Z"
+  },
+  {
+    "id": "f-002",
+    "severity": "critical",
+    "name": "Remote Code Execution via deserialization",
+    "cve_id": "CVE-2023-5678",
+    "repo": "backend-core",
+    "file": "lib/serializer.rb",
+    "line": 87,
+    "cvss_score": 9.5,
+    "status": "open",
+    "description": "Untrusted data is deserialized without validation allowing arbitrary code execution.",
+    "created_at": "2024-01-14T08:00:00Z"
+  },
+  {
+    "id": "f-003",
+    "severity": "high",
+    "name": "Cross-Site Scripting (XSS) in search results",
+    "cve_id": null,
+    "repo": "frontend-app",
+    "file": "components/Search.jsx",
+    "line": 23,
+    "cvss_score": 7.4,
+    "status": "open",
+    "description": "User input rendered directly to DOM without escaping.",
+    "created_at": "2024-01-13T14:20:00Z"
+  },
+  {
+    "id": "f-004",
+    "severity": "high",
+    "name": "Exposed AWS credentials in environment",
+    "cve_id": null,
+    "repo": "infra-scripts",
+    "file": ".env.production",
+    "line": 5,
+    "cvss_score": 8.1,
+    "status": "open",
+    "description": "AWS access keys committed to repository.",
+    "created_at": "2024-01-12T09:45:00Z"
+  },
+  {
+    "id": "f-005",
+    "severity": "medium",
+    "name": "Missing CSRF protection on API endpoint",
+    "cve_id": null,
+    "repo": "api-service",
+    "file": "routes/users.py",
+    "line": 156,
+    "cvss_score": 5.3,
+    "status": "open",
+    "description": "API endpoint modifies state but lacks CSRF token validation.",
+    "created_at": "2024-01-11T16:00:00Z"
+  }
+]
