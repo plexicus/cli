@@ -12,6 +12,7 @@ type FlowStep =
   | 'pick-provider'
   | 'authorizing'
   | 'gitea-form'
+  | 'manual-url'
   | 'pick-repos'
   | 'importing'
   | 'done'
@@ -51,6 +52,9 @@ export function SCMConnectFlow({ onClose }: { onClose: () => void }) {
   const [giteaUrl, setGiteaUrl] = useState('')
   const [giteaToken, setGiteaToken] = useState('')
   const [giteaField, setGiteaField] = useState<'url' | 'token'>('url')
+  const [manualRepoUrl, setManualRepoUrl] = useState('')
+  const [manualNickname, setManualNickname] = useState('')
+  const [manualField, setManualField] = useState<'url' | 'nickname'>('url')
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -118,6 +122,30 @@ export function SCMConnectFlow({ onClose }: { onClose: () => void }) {
     }
   }, [giteaUrl, giteaToken, state.token])
 
+  const connectManual = useCallback(async () => {
+    const url = manualRepoUrl.trim()
+    if (!url) return
+    const nickname = manualNickname.trim() || url.split('/').filter(Boolean).pop() || url
+    const guessProvider = (u: string): string => {
+      if (u.includes('github.com')) return 'github'
+      if (u.includes('gitlab.com')) return 'gitlab'
+      if (u.includes('bitbucket.org')) return 'bitbucket'
+      return 'gitea'
+    }
+    setStep('importing')
+    try {
+      const config = await loadConfig()
+      const api = new PlexicusApi({ baseUrl: config.serverUrl, token: state.token ?? undefined })
+      const repo = { id: nickname, name: nickname, full_name: nickname, html_url: url }
+      await api.importRepositories([repo], guessProvider(url))
+      setImportedCount(1)
+      setStep('done')
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Import failed')
+      setStep('error')
+    }
+  }, [manualRepoUrl, manualNickname, state.token])
+
   const importSelected = useCallback(async () => {
     const toImport = repos.filter(r => selectedRepoIds.has(r.id))
     if (toImport.length === 0) return
@@ -161,6 +189,7 @@ export function SCMConnectFlow({ onClose }: { onClose: () => void }) {
     }
 
     if (step === 'pick-provider') {
+      if (input === 'm') { setStep('manual-url'); setManualRepoUrl(''); setManualNickname(''); setManualField('url'); return }
       if (input === 'j' || key.downArrow) { setCursor(c => Math.min(c + 1, PROVIDERS.length - 1)); return }
       if (input === 'k' || key.upArrow) { setCursor(c => Math.max(c - 1, 0)); return }
       if (key.return) {
@@ -196,11 +225,14 @@ export function SCMConnectFlow({ onClose }: { onClose: () => void }) {
       }
     }
 
-    if (step === 'done' || step === 'error') {
-      if (key.return || key.escape) {
-        dispatch({ type: 'scm/close' })
-        onClose()
-      }
+    if (step === 'error') {
+      if (input === 'm') { setStep('manual-url'); setManualRepoUrl(''); setManualNickname(''); setManualField('url'); return }
+      if (key.return || key.escape) { dispatch({ type: 'scm/close' }); onClose() }
+      return
+    }
+
+    if (step === 'done') {
+      if (key.return || key.escape) { dispatch({ type: 'scm/close' }); onClose() }
       return
     }
   })
@@ -219,7 +251,7 @@ export function SCMConnectFlow({ onClose }: { onClose: () => void }) {
               {i === cursor ? '▶ ' : '  '}{p.label}
             </Text>
           ))}
-          <Box marginTop={1}><Text dimColor>↑↓=navigate  Enter=select  Esc=cancel</Text></Box>
+          <Box marginTop={1}><Text dimColor>↑↓=navigate  Enter=select  m=manual URL  Esc=cancel</Text></Box>
         </Box>
       )}
 
@@ -304,10 +336,39 @@ export function SCMConnectFlow({ onClose }: { onClose: () => void }) {
         </Box>
       )}
 
+      {step === 'manual-url' && (
+        <Box flexDirection="column" marginTop={1}>
+          <Text dimColor>Enter the repository URL and a nickname:</Text>
+          <Box marginTop={1}>
+            <Text dimColor>URL: </Text>
+            <TextInput
+              value={manualRepoUrl}
+              onChange={setManualRepoUrl}
+              onSubmit={() => setManualField('nickname')}
+              placeholder="https://github.com/org/repo"
+              focus={manualField === 'url'}
+            />
+          </Box>
+          <Box>
+            <Text dimColor>Name: </Text>
+            <TextInput
+              value={manualNickname}
+              onChange={setManualNickname}
+              onSubmit={connectManual}
+              placeholder="my-repo (optional)"
+              focus={manualField === 'nickname'}
+            />
+          </Box>
+          <Box marginTop={1}><Text dimColor>Enter to advance  Enter on name to import  Esc=back</Text></Box>
+        </Box>
+      )}
+
       {step === 'error' && (
         <Box flexDirection="column" marginTop={1}>
           <Text color="red">✗ {errorMsg}</Text>
-          <Text dimColor>Press Enter or Esc to close</Text>
+          <Box marginTop={1}>
+            <Text dimColor>m=add repo manually  Esc=close</Text>
+          </Box>
         </Box>
       )}
     </Box>
