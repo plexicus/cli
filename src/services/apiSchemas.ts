@@ -49,6 +49,7 @@ const FindingAttributesSchema = z.object({
   description: z.string().nullable().default(null),
   mitigation: z.string().nullable().default(null),
   single_line_code: z.string().nullable().default(null),
+  scanner_report_code: z.string().nullable().default(null),
   policy_name: z.string().nullable().default(null),
 }).transform(a => ({
   ...a,
@@ -86,6 +87,7 @@ const RepoAttributesSchema = z.object({
   data: z.object({
     branch: z.string().optional(),
     source_control: z.string().optional(),
+    url: z.string().optional(),
     tags: z.array(z.string()).optional(),
   }).optional(),
   findings: z.object({

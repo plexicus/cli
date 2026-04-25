@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { useAppState } from '../state/AppState.js'
 import { accent } from '../utils/theme.js'
@@ -31,9 +31,15 @@ function scoreBar(value: number | null, max = 100): string {
   return '█'.repeat(filled) + '░'.repeat(10 - filled) + ` ${value}`
 }
 
-const CODE_VISIBLE = 10
+const CODE_VISIBLE = 12
 
-function CodeBlock({ code, scrollOffset }: { code: string; scrollOffset: number }) {
+// scanner_report_code lines are prefixed with a 6-digit line number: "000020    code..."
+function parseLineNum(line: string): number | null {
+  const m = line.match(/^(\d{6})\s/)
+  return m ? parseInt(m[1], 10) : null
+}
+
+function CodeBlock({ code, scrollOffset, highlightLine }: { code: string; scrollOffset: number; highlightLine?: number | null }) {
   const lines = code.split('\n')
   const start = Math.max(0, Math.min(scrollOffset, Math.max(0, lines.length - CODE_VISIBLE)))
   const visible = lines.slice(start, start + CODE_VISIBLE)
@@ -42,9 +48,15 @@ function CodeBlock({ code, scrollOffset }: { code: string; scrollOffset: number 
   return (
     <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
       {above > 0 && <Text dimColor>↑ {above} line{above > 1 ? 's' : ''} above</Text>}
-      {visible.map((line, i) => (
-        <Text key={start + i} color="yellow">{line}</Text>
-      ))}
+      {visible.map((line, i) => {
+        const lineNum = parseLineNum(line)
+        const isHot = highlightLine !== null && highlightLine !== undefined && lineNum === highlightLine
+        return (
+          <Text key={start + i} backgroundColor={isHot ? 'yellow' : undefined} color={isHot ? 'black' : 'white'}>
+            {line}
+          </Text>
+        )
+      })}
       {below > 0 && <Text dimColor>↓ {below} line{below > 1 ? 's' : ''} below</Text>}
     </Box>
   )
@@ -98,11 +110,22 @@ export function FindingDetailScreen() {
     const url = scmUrl(repo, finding)
     if (!url) return
     const result = await openScmLink(url)
-    if (!result.opened) setScmStatus(`Copied / URL: ${result.url}`)
-    else setScmStatus(null)
+    if (result.opened && result.copied) setScmStatus(`Opened + copied: ${result.url}`)
+    else if (result.opened) setScmStatus(`Opened: ${result.url}`)
+    else if (result.copied) setScmStatus(`Copied: ${result.url}`)
+    else setScmStatus(`URL: ${result.url}`)
   }, [finding, repo])
 
-  const codeLineCount = finding?.single_line_code?.split('\n').length ?? 0
+  const codeSource = finding?.scanner_report_code ?? finding?.single_line_code ?? null
+  const codeLineCount = codeSource?.split('\n').length ?? 0
+
+  // Auto-scroll so the highlighted line is centred on open
+  useEffect(() => {
+    if (!codeSource || !finding?.line) return
+    const lines = codeSource.split('\n')
+    const idx = lines.findIndex(l => parseLineNum(l) === finding.line)
+    if (idx >= 0) setCodeScroll(Math.max(0, idx - Math.floor(CODE_VISIBLE / 2)))
+  }, [finding?.id])
 
   useInput((input, key) => {
     if (!finding) return
@@ -271,11 +294,11 @@ export function FindingDetailScreen() {
         </Box>
       )}
 
-      {/* ── Code snippet (multiline, up to 20 lines) ── */}
-      {finding.single_line_code && (
+      {/* ── Code snippet ── */}
+      {codeSource && (
         <Box marginTop={1} flexDirection="column">
           <Text dimColor>Code</Text>
-          <CodeBlock code={finding.single_line_code} scrollOffset={codeScroll} />
+          <CodeBlock code={codeSource} scrollOffset={codeScroll} highlightLine={finding.line} />
         </Box>
       )}
 

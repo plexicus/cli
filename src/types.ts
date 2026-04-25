@@ -37,6 +37,7 @@ export interface Finding {
   description: string | null
   mitigation: string | null
   single_line_code: string | null
+  scanner_report_code: string | null
   policy_name: string | null
 }
 
@@ -46,6 +47,7 @@ export interface Repository {
   id: string
   nickname: string
   uri: string
+  html_url: string | null
   repository_branch: string
   active: boolean
   repo_type: string

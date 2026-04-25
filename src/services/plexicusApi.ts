@@ -130,6 +130,7 @@ function parseRepos(raw: unknown): ReposResult {
     id: item.id,
     nickname: item.attributes.nickname,
     uri: item.attributes.uri,
+    html_url: item.attributes.data?.url ?? null,
     active: item.attributes.active,
     repo_type: item.attributes.repo_type,
     status: item.attributes.status,
