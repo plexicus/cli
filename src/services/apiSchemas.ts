@@ -76,7 +76,7 @@ const RepoAttributesSchema = z.object({
     medium: z.number().default(0),
     low: z.number().default(0),
     info: z.number().default(0),
-  }).optional(),
+  }).nullable().optional(),
 })
 
 export const RepoItemSchema = z.object({
