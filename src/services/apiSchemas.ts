@@ -1,10 +1,19 @@
 import { z } from 'zod'
 
+const SEVERITY_MAP: Record<string, string> = {
+  critical: 'critical', high: 'high', medium: 'medium', low: 'low',
+  informational: 'informational', info: 'informational',
+}
+
+const STATUS_MAP: Record<string, string> = {
+  open: 'open', ready: 'open', enriched: 'enriched', mitigated: 'mitigated',
+}
+
 const FindingAttributesSchema = z.object({
   title: z.string(),
-  severity: z.enum(['critical', 'high', 'medium', 'low', 'informational']),
+  severity: z.string().transform(s => (SEVERITY_MAP[s.toLowerCase()] ?? 'low') as 'critical' | 'high' | 'medium' | 'low' | 'informational'),
   severity_numerical: z.number().nullable().default(null),
-  status: z.enum(['open', 'mitigated', 'enriched']).default('open'),
+  status: z.string().transform(s => (STATUS_MAP[s.toLowerCase()] ?? 'open') as 'open' | 'mitigated' | 'enriched'),
   type: z.enum(['SAST', 'SCA', 'DAST']).nullable().default(null),
   category: z.string().nullable().default(null),
   tool: z.string().nullable().default(null),
@@ -24,9 +33,16 @@ const FindingAttributesSchema = z.object({
   repo_id: z.string(),
   date: z.string(),
   is_false_positive: z.boolean().default(false),
-  is_duplicate: z.boolean().default(false),
+  duplicate: z.boolean().optional(),
+  is_duplicate: z.boolean().optional(),
   is_sandbox: z.boolean().default(false),
-  owasps: z.array(z.string()).default([]),
+  owasps: z.array(
+    z.union([
+      z.string(),
+      z.object({ owasp_id: z.string(), title: z.string().optional() })
+        .transform(o => o.owasp_id),
+    ])
+  ).default([]),
   policy_rules: z.array(z.unknown()).default([]),
   tags: z.array(z.string()).default([]),
   cve: z.string().nullable().default(null),
@@ -34,7 +50,10 @@ const FindingAttributesSchema = z.object({
   mitigation: z.string().nullable().default(null),
   single_line_code: z.string().nullable().default(null),
   policy_name: z.string().nullable().default(null),
-})
+}).transform(a => ({
+  ...a,
+  is_duplicate: a.is_duplicate ?? a.duplicate ?? false,
+}))
 
 export const FindingItemSchema = z.object({
   id: z.string(),
