@@ -32,6 +32,8 @@ const FindingAttributesSchema = z.object({
   cve: z.string().nullable().default(null),
   description: z.string().nullable().default(null),
   mitigation: z.string().nullable().default(null),
+  single_line_code: z.string().nullable().default(null),
+  policy_name: z.string().nullable().default(null),
 })
 
 export const FindingItemSchema = z.object({
@@ -49,6 +51,11 @@ const PaginationSchema = z.object({
 export const FindingsResponseSchema = z.object({
   data: z.array(FindingItemSchema),
   meta: z.object({ pagination: PaginationSchema }).optional(),
+})
+
+export const SingleFindingResponseSchema = z.object({
+  data: FindingItemSchema,
+  meta: z.unknown().optional(),
 })
 
 const RepoAttributesSchema = z.object({
@@ -90,29 +97,58 @@ export const RemediationSchema = z.object({
   auto_create: z.boolean(),
 })
 
+export const RemediationsCollectionSchema = z.object({
+  items: z.array(RemediationSchema),
+  next: z.string().nullable().optional(),
+  prev: z.string().nullable().optional(),
+})
+
 export const PRSchema = z.object({
   remediation_id: z.string(),
   url: z.string(),
   status: z.string(),
 })
 
-export const ApiTokenSchema = z.object({
+export const ApiTokenListItemSchema = z.object({
+  name: z.string(),
+  created_at: z.string(),
+  expires_at: z.string().nullable().optional(),
+  token_type: z.string().default('api'),
+})
+
+export const ApiTokenCreatedSchema = z.object({
   id: z.string(),
   name: z.string(),
   token: z.string(),
   created_at: z.string(),
 })
 
-export const ApiTokensListSchema = z.array(ApiTokenSchema)
+export const ApiTokensListSchema = z.array(ApiTokenListItemSchema)
 export const RemediationsListSchema = z.array(RemediationSchema)
 
 export const SessionUserSchema = z.object({
-  id: z.string(),
+  user_id: z.string(),
+  client_id: z.string(),
   email: z.string(),
-})
+}).transform(u => ({ id: u.user_id, client_id: u.client_id, email: u.email }))
 
-export const LoginResponseSchema = z.object({
+export const LoginResponseFlatSchema = z.object({
   access_token: z.string(),
   token_type: z.string().default('Bearer'),
-  requires_2fa: z.boolean().optional(),
 })
+
+export const LoginResponse2FASchema = z.object({
+  otp_data: z.object({ secret: z.string() }),
+  requires_2fa: z.literal(true),
+  message: z.string(),
+})
+
+export const LoginResponseUnion = z.union([LoginResponseFlatSchema, LoginResponse2FASchema])
+
+export const Verify2FAResponseSchema = z.object({
+  verify_otp: z.boolean(),
+  access_token: z.string().optional(),
+  token_type: z.string().optional(),
+})
+
+export const LoginResponseSchema = LoginResponseFlatSchema

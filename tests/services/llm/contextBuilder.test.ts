@@ -36,6 +36,8 @@ const makeFinding = (overrides: Partial<Finding> = {}): Finding => ({
   policy_rules: [],
   tags: [],
   mitigation: null,
+  single_line_code: null,
+  policy_name: null,
   ...overrides,
 })
 

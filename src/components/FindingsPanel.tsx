@@ -1,24 +1,22 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { Box, Text } from 'ink'
 import { useAppState } from '../state/AppState.js'
+import { accent } from '../utils/theme.js'
 import { useKeymap } from '../hooks/useKeymap.js'
 import { useFindings } from '../hooks/useFindings.js'
 import { Spinner } from './design-system/Spinner.js'
 import { FuzzyPicker } from './design-system/FuzzyPicker.js'
-import { severityBadge, severityColor } from '../utils/severity.js'
+import { severityColor } from '../utils/severity.js'
 import type { Finding } from '../types.js'
 import type { FindingsFilter } from '../state/actions.js'
-
-function formatDate(dateStr: string): string {
-  return dateStr.slice(0, 10)
-}
 
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '…' : str
 }
 
 function isFilterActive(filter: FindingsFilter): boolean {
-  return Object.values(filter as Record<string, unknown>).some(v => {
+  const { sort_by, sort_dir, ...rest } = filter
+  return Object.values(rest as Record<string, unknown>).some(v => {
     if (Array.isArray(v)) return v.length > 0
     return v !== undefined && v !== null && v !== false
   })
@@ -31,42 +29,37 @@ interface FindingsPanelProps {
 
 export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
   const { state, dispatch } = useAppState()
+  const ac = accent(state.theme)
   const { findings, loading } = useFindings({ cve })
   const [cursorIndex, setCursorIndex] = useState(0)
 
-  const pageFindings = findings
   const hasFilter = isFilterActive(state.findingsFilter)
 
-  // Reset cursor when page or filter changes
   useEffect(() => {
     setCursorIndex(0)
   }, [state.findingsPage, state.findingsFilter])
 
   const handleDown = useCallback(() => {
-    setCursorIndex(i => Math.min(i + 1, pageFindings.length - 1))
-  }, [pageFindings.length])
+    setCursorIndex(i => Math.min(i + 1, findings.length - 1))
+  }, [findings.length])
 
   const handleUp = useCallback(() => {
     setCursorIndex(i => Math.max(i - 1, 0))
   }, [])
 
   const handleSelect = useCallback(() => {
-    const finding = pageFindings[cursorIndex]
-    if (finding) dispatch({ type: 'findings/select', payload: finding.id })
-  }, [pageFindings, cursorIndex, dispatch])
-
-  const handleEscape = useCallback(() => {
-    dispatch({ type: 'findings/select', payload: null })
-  }, [dispatch])
-
-  const handleRemediate = useCallback(async () => {
-    const finding = pageFindings[cursorIndex]
+    const finding = findings[cursorIndex]
     if (!finding) return
     dispatch({ type: 'findings/select', payload: finding.id })
-  }, [pageFindings, cursorIndex, dispatch])
+    dispatch({ type: 'nav/pushScreen', payload: 'detail' })
+  }, [findings, cursorIndex, dispatch])
+
+  const handleEscape = useCallback(() => {
+    dispatch({ type: 'nav/popScreen' })
+  }, [dispatch])
 
   const handleSuppress = useCallback(async () => {
-    const finding = pageFindings[cursorIndex]
+    const finding = findings[cursorIndex]
     if (!finding) return
     try {
       const { loadConfig } = await import('../services/config.js')
@@ -74,15 +67,14 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
       const config = await loadConfig()
       const api = new PlexicusApi({ baseUrl: config.serverUrl, token: state.token ?? config.token })
       await api.markMitigated(finding.id)
-      const updated = { ...finding, status: 'mitigated' as const }
-      dispatch({ type: 'findings/update', payload: updated })
+      dispatch({ type: 'findings/update', payload: { ...finding, status: 'mitigated' as const } })
     } catch (err) {
       dispatch({ type: 'ui/setError', payload: err instanceof Error ? err.message : 'Failed to suppress finding' })
     }
-  }, [pageFindings, cursorIndex, dispatch, state.token])
+  }, [findings, cursorIndex, dispatch, state.token])
 
   const handleFalsePositive = useCallback(async () => {
-    const finding = pageFindings[cursorIndex]
+    const finding = findings[cursorIndex]
     if (!finding) return
     try {
       const { loadConfig } = await import('../services/config.js')
@@ -90,12 +82,11 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
       const config = await loadConfig()
       const api = new PlexicusApi({ baseUrl: config.serverUrl, token: state.token ?? config.token })
       await api.toggleFalsePositive(finding.id)
-      const updated = { ...finding, is_false_positive: !finding.is_false_positive }
-      dispatch({ type: 'findings/update', payload: updated })
+      dispatch({ type: 'findings/update', payload: { ...finding, is_false_positive: !finding.is_false_positive } })
     } catch (err) {
       dispatch({ type: 'ui/setError', payload: err instanceof Error ? err.message : 'Failed to toggle false positive' })
     }
-  }, [pageFindings, cursorIndex, dispatch, state.token])
+  }, [findings, cursorIndex, dispatch, state.token])
 
   useKeymap(
     {
@@ -103,7 +94,6 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
       onUp: handleUp,
       onSelect: handleSelect,
       onEscape: handleEscape,
-      onRemediate: handleRemediate,
       onSuppress: handleSuppress,
       onFalsePositive: handleFalsePositive,
       onNextPage: () => {
@@ -117,10 +107,10 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
         }
       },
     },
-    { inputMode: state.inputMode, isActive: state.activePanel === 'findings' },
+    { inputMode: state.inputMode, isActive: state.screen === 'findings' },
   )
 
-  if (state.fuzzyOpen && state.activePanel === 'findings') {
+  if (state.fuzzyOpen && state.screen === 'findings') {
     return (
       <FuzzyPicker
         items={findings}
@@ -128,9 +118,11 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
         onSelect={f => {
           dispatch({ type: 'findings/select', payload: f.id })
           dispatch({ type: 'ui/setFuzzyOpen', payload: false })
+          dispatch({ type: 'nav/pushScreen', payload: 'detail' })
         }}
         onCancel={() => dispatch({ type: 'ui/setFuzzyOpen', payload: false })}
         placeholder="Search findings..."
+        accentColor={ac}
       />
     )
   }
@@ -155,57 +147,64 @@ export function FindingsPanel({ repo, cve }: FindingsPanelProps) {
   }
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" flexGrow={1}>
       {/* Column headers */}
       <Box paddingX={1}>
-        <Box width={8}><Text bold dimColor>SEVER</Text></Box>
         <Box flexGrow={1}>
-          <Text bold dimColor>CVE / Title</Text>
-          {hasFilter && <Text color="cyan"> ●</Text>}
+          <Text bold dimColor>Title</Text>
+          {hasFilter && <Text color={ac}> ●</Text>}
         </Box>
-        <Box width={16}><Text bold dimColor>Repo</Text></Box>
-        <Box width={12}><Text bold dimColor>Date</Text></Box>
+        <Box width={6}><Text bold dimColor>Prio</Text></Box>
+        <Box width={4}><Text bold dimColor>Sev</Text></Box>
+        <Box width={14}><Text bold dimColor>Repo</Text></Box>
+        <Box width={11}><Text bold dimColor>Date</Text></Box>
       </Box>
 
-      {/* Findings rows */}
-      {pageFindings.map((finding, i) => {
+      {findings.map((finding, i) => {
         const isSelected = i === cursorIndex
-        const isDetailSelected = finding.id === state.selectedFindingId
         const color = severityColor(finding.severity)
         const repoDisplay = finding.repo_nickname ?? finding.repo_id
+        const prio = finding.prioritization_value
+        const sevLetter = finding.severity[0].toUpperCase()
 
         return (
           <Box key={finding.id} paddingX={1}>
-            <Box width={8}>
-              <Text color={color} bold inverse={isSelected}>{severityBadge(finding.severity)}</Text>
-            </Box>
             <Box flexGrow={1}>
               <Text inverse={isSelected}>
-                {truncate(finding.cve ? `${finding.cve} ${finding.title}` : finding.title, 40)}
+                {truncate(finding.cve ? `${finding.cve} ${finding.title}` : finding.title, 45)}
               </Text>
             </Box>
-            <Box width={16}>
-              <Text dimColor={!isSelected} inverse={isSelected}>{truncate(repoDisplay, 15)}</Text>
+            <Box width={6}>
+              {prio !== null ? (
+                <Text
+                  color={prio >= 80 ? 'red' : prio >= 50 ? 'yellow' : undefined}
+                  inverse={isSelected}
+                  bold={isSelected}
+                >
+                  {String(prio).padStart(3) + ' '}
+                </Text>
+              ) : (
+                <Text dimColor inverse={isSelected}>{'  — '}</Text>
+              )}
             </Box>
-            <Box width={12}>
-              <Text dimColor={!isSelected} inverse={isSelected}>{formatDate(finding.date)}</Text>
+            <Box width={4}>
+              <Text color={color} bold> {sevLetter} </Text>
             </Box>
-            {isDetailSelected && <Text color="cyan"> ◀</Text>}
+            <Box width={14}>
+              <Text dimColor={!isSelected} inverse={isSelected}>{truncate(repoDisplay, 13)}</Text>
+            </Box>
+            <Box width={11}>
+              <Text dimColor={!isSelected} inverse={isSelected}>{finding.date.slice(0, 10)}</Text>
+            </Box>
           </Box>
         )
       })}
 
-      {/* Pagination indicator */}
       <Box paddingX={1} marginTop={1}>
-        <Text dimColor>
-          Page {state.findingsPage + 1}/{state.findingsPageCount} — {state.findingsTotal} total findings
-          {state.findingsPageCount > 1 ? ' (] next, [ prev)' : ''}
-        </Text>
-      </Box>
-
-      {/* Action hints */}
-      <Box paddingX={1}>
-        <Text dimColor>[Enter]detail [r]emediate [s]uppress [f]alse-pos [F]filter [c]hat [/]search [?]help</Text>
+        <Text dimColor>Enter=detail  s=suppress  f=fp  F=filter  /=search  ?=help  Esc=back</Text>
+        {state.findingsPageCount > 1 && (
+          <Text dimColor>  ]=next  [=prev</Text>
+        )}
       </Box>
     </Box>
   )

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, type ReactNode } from 'react'
-import type { Finding, Repository, Remediation, ChatMessage, Panel, InputMode, SessionUser } from '../types.js'
+import type { Finding, Repository, Remediation, ChatMessage, Panel, InputMode, SessionUser, StatusJob, Screen } from '../types.js'
 import type { Action, FindingsFilter } from './actions.js'
 
 export interface AppState {
@@ -18,14 +18,21 @@ export interface AppState {
   remediations: Record<string, Remediation>
   chatMessages: ChatMessage[]
   chatStreaming: boolean
-  chatVisible: boolean
   activePanel: Panel
   inputMode: InputMode
   fuzzyOpen: boolean
   filterOpen: boolean
-  theme: 'dark' | 'light'
+  scmFlowOpen: boolean
+  activeStatusJob: StatusJob | null
+  wsConnected: boolean
+  theme: 'dark' | 'light' | 'plexicus'
   error: string | null
-  pendingChatMessage: string | null
+  notification: string | null
+  screen: Screen
+  screenStack: Screen[]
+  selectedRepoId: string | null
+  aiModalOpen: boolean
+  aiModalPrompt: string | null
 }
 
 const initialState: AppState = {
@@ -35,7 +42,7 @@ const initialState: AppState = {
   findings: [],
   selectedFindingId: null,
   findingsLoading: false,
-  findingsFilter: { severities: ['critical', 'high'] },
+  findingsFilter: {},
   findingsPage: 0,
   findingsTotal: 0,
   findingsPageCount: 1,
@@ -44,14 +51,21 @@ const initialState: AppState = {
   remediations: {},
   chatMessages: [],
   chatStreaming: false,
-  chatVisible: false,
-  activePanel: 'findings',
+  activePanel: 'repos',
   inputMode: 'navigation',
   fuzzyOpen: false,
   filterOpen: false,
-  theme: 'dark',
+  scmFlowOpen: false,
+  activeStatusJob: null,
+  wsConnected: false,
+  theme: 'plexicus',
   error: null,
-  pendingChatMessage: null,
+  notification: null,
+  screen: 'repos',
+  screenStack: ['repos'],
+  selectedRepoId: null,
+  aiModalOpen: false,
+  aiModalPrompt: null,
 }
 
 function reducer(state: AppState, action: Action): AppState {
@@ -103,9 +117,6 @@ function reducer(state: AppState, action: Action): AppState {
     case 'chat/streaming':
       return { ...state, chatStreaming: action.payload }
 
-    case 'chat/toggle':
-      return { ...state, chatVisible: !state.chatVisible }
-
     case 'chat/chunk': {
       const { messageIndex, chunk } = action.payload
       const msgs = state.chatMessages.map((m, i) =>
@@ -124,9 +135,6 @@ function reducer(state: AppState, action: Action): AppState {
     case 'chat/clear':
       return { ...state, chatMessages: [] }
 
-    case 'chat/setPending':
-      return { ...state, pendingChatMessage: action.payload }
-
     case 'ui/setPanel':
       return { ...state, activePanel: action.payload }
 
@@ -135,6 +143,9 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'ui/setError':
       return { ...state, error: action.payload }
+
+    case 'ui/setNotification':
+      return { ...state, notification: action.payload }
 
     case 'ui/setInputMode':
       return { ...state, inputMode: action.payload }
@@ -147,6 +158,53 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'filter/close':
       return { ...state, filterOpen: false, inputMode: 'navigation' }
+
+    case 'scm/open':
+      return { ...state, scmFlowOpen: true, inputMode: 'scm' }
+
+    case 'scm/close':
+      return { ...state, scmFlowOpen: false, inputMode: 'navigation' }
+
+    case 'status/open':
+      return { ...state, activeStatusJob: action.payload }
+
+    case 'status/update': {
+      if (!state.activeStatusJob || state.activeStatusJob.id !== action.payload.id) return state
+      const { logs: newLogs, ...rest } = action.payload
+      const mergedLogs = newLogs?.length
+        ? [...state.activeStatusJob.logs, ...newLogs].slice(-200)
+        : state.activeStatusJob.logs
+      return { ...state, activeStatusJob: { ...state.activeStatusJob, ...rest, logs: mergedLogs } }
+    }
+
+    case 'status/close':
+      return { ...state, activeStatusJob: null }
+
+    case 'ws/setConnected':
+      return { ...state, wsConnected: action.payload }
+
+    case 'nav/pushScreen': {
+      const newStack = [...state.screenStack, action.payload]
+      const panel: Panel = action.payload === 'repos' ? 'repos' : 'findings'
+      return { ...state, screen: action.payload, screenStack: newStack, activePanel: panel }
+    }
+
+    case 'nav/popScreen': {
+      if (state.screenStack.length <= 1) return state
+      const newStack = state.screenStack.slice(0, -1)
+      const prev = newStack[newStack.length - 1]
+      const panel: Panel = prev === 'repos' ? 'repos' : 'findings'
+      return { ...state, screen: prev, screenStack: newStack, activePanel: panel }
+    }
+
+    case 'repo/select':
+      return { ...state, selectedRepoId: action.payload }
+
+    case 'ai/open':
+      return { ...state, aiModalOpen: true, aiModalPrompt: action.payload ?? null }
+
+    case 'ai/close':
+      return { ...state, aiModalOpen: false, aiModalPrompt: null }
 
     default:
       return state
@@ -162,10 +220,10 @@ const AppStateContext = createContext<AppStateContextValue | null>(null)
 
 interface AppStateProviderProps {
   children: ReactNode
-  initialTheme?: 'dark' | 'light'
+  initialTheme?: 'dark' | 'light' | 'plexicus'
 }
 
-export function AppStateProvider({ children, initialTheme = 'dark' }: AppStateProviderProps) {
+export function AppStateProvider({ children, initialTheme = 'plexicus' }: AppStateProviderProps) {
   const [state, dispatch] = useReducer(reducer, {
     ...initialState,
     theme: initialTheme,

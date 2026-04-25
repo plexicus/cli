@@ -2,16 +2,16 @@ import { describe, it, expect } from 'bun:test'
 import { findCommand, getAllCommands } from '../../src/commands.js'
 
 describe('command registry', () => {
-  it('finds ask command by name', async () => {
-    const cmd = await findCommand('ask')
+  it('finds theme command by name', async () => {
+    const cmd = await findCommand('theme')
     expect(cmd).toBeDefined()
-    expect(cmd?.name).toBe('ask')
+    expect(cmd?.name).toBe('theme')
   })
 
-  it('finds ask command by alias', async () => {
-    const cmd = await findCommand('a')
+  it('finds config command by name', async () => {
+    const cmd = await findCommand('config')
     expect(cmd).toBeDefined()
-    expect(cmd?.name).toBe('ask')
+    expect(cmd?.name).toBe('config')
   })
 
   it('returns undefined for unknown command', async () => {
@@ -22,9 +22,8 @@ describe('command registry', () => {
   it('getAllCommands returns all registered commands', async () => {
     const cmds = await getAllCommands()
     expect(Array.isArray(cmds)).toBe(true)
-    expect(cmds.length).toBeGreaterThanOrEqual(4)
+    expect(cmds.length).toBeGreaterThanOrEqual(3)
     const names = cmds.map(c => c.name)
-    expect(names).toContain('ask')
     expect(names).toContain('theme')
     expect(names).toContain('filter')
     expect(names).toContain('config')

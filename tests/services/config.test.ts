@@ -8,7 +8,7 @@ describe('ConfigSchema', () => {
   it('provides defaults', () => {
     const config = ConfigSchema.parse({})
     expect(config.serverUrl).toBe('https://api.app.plexicus.ai')
-    expect(config.theme).toBe('dark')
+    expect(config.theme).toBe('plexicus')
     expect(config.llm).toEqual({})
   })
 

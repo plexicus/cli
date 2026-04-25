@@ -32,8 +32,9 @@
         "policy_rules": [],
         "tags": [],
         "cve": "CVE-2023-1234",
+        "single_line_code": "def authenticate_user(username, password):\n    query = \"SELECT * FROM users WHERE username='\" + username + \"' AND password='\" + password + \"'\"\n    cursor.execute(query)\n    user = cursor.fetchone()\n    if user:\n        session['user_id'] = user['id']\n        session['username'] = user['username']\n        return True\n    return False",
         "description": "User-supplied input is concatenated directly into SQL query without sanitization. An attacker can bypass authentication or extract sensitive data from the database.",
-        "mitigation": null
+        "mitigation": "Use parameterized queries or prepared statements instead of string concatenation. Example: cursor.execute('SELECT * FROM users WHERE username=? AND password=?', (username, password)). Consider using an ORM like SQLAlchemy which handles escaping automatically. Also implement proper password hashing (bcrypt/argon2) rather than storing/comparing plaintext passwords."
       }
     }
   ],

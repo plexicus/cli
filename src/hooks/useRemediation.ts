@@ -1,14 +1,16 @@
-import React, { useCallback, useRef } from 'react'
+import React, { useCallback, useRef, useState } from 'react'
 import { useAppState } from '../state/AppState.js'
 import { PlexicusApi } from '../services/plexicusApi.js'
 import { loadConfig } from '../services/config.js'
 
+const MOCK_MODE = process.env.MOCK_PLEXICUS === '1'
 const POLL_INTERVAL_MS = 2000
 const MAX_POLL_ATTEMPTS = 30
 
 export function useRemediation(findingId: string | null) {
   const { state, dispatch } = useAppState()
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [prUrl, setPrUrl] = useState<string | null>(null)
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -22,17 +24,69 @@ export function useRemediation(findingId: string | null) {
 
     dispatch({ type: 'ui/setError', payload: null })
 
+    if (MOCK_MODE) {
+      const { mockFlowState, runMockRemediationFlow, getMockDiff } = await import('../services/mockRemediation.js')
+
+      const flowStatus = mockFlowState.get(findingId)
+
+      if (flowStatus === 'ready') {
+        const existing = state.remediations[findingId]
+        if (!existing || existing.status !== 'ready') {
+          dispatch({
+            type: 'remediation/set',
+            payload: {
+              id: `rem-${findingId}`,
+              finding_id: findingId,
+              status: 'ready',
+              diff: getMockDiff(findingId),
+              auto_create: false,
+            },
+          })
+        }
+        return
+      }
+
+      if (flowStatus === 'running') return
+
+      dispatch({
+        type: 'remediation/set',
+        payload: {
+          id: `rem-${findingId}`,
+          finding_id: findingId,
+          status: 'pending',
+          diff: null,
+          auto_create: false,
+        },
+      })
+
+      const finding = state.findings.find(f => f.id === findingId)
+      const title = finding?.title ?? findingId
+      void runMockRemediationFlow(findingId, title, dispatch).then(() => {
+        dispatch({
+          type: 'remediation/set',
+          payload: {
+            id: `rem-${findingId}`,
+            finding_id: findingId,
+            status: 'ready',
+            diff: getMockDiff(findingId),
+            auto_create: false,
+          },
+        })
+        setTimeout(() => dispatch({ type: 'status/close' }), 2000)
+      })
+      return
+    }
+
     try {
       const config = await loadConfig()
       const api = new PlexicusApi({ baseUrl: config.serverUrl, token: state.token ?? config.token })
 
-      // Create remediation
-      const remediation = await api.createRemediation(findingId)
-      dispatch({ type: 'remediation/set', payload: remediation })
+      dispatch({
+        type: 'remediation/set',
+        payload: { id: `rem-${findingId}`, finding_id: findingId, status: 'pending', diff: null, auto_create: false },
+      })
+      await api.createRemediation(findingId)
 
-      if (remediation.status === 'ready') return
-
-      // Poll until ready
       let attempts = 0
       stopPolling()
       pollingRef.current = setInterval(async () => {
@@ -60,30 +114,39 @@ export function useRemediation(findingId: string | null) {
     } catch (err) {
       dispatch({ type: 'ui/setError', payload: err instanceof Error ? err.message : 'Failed to create remediation' })
     }
-  }, [findingId, state.token, dispatch, stopPolling])
+  }, [findingId, state.token, state.findings, state.remediations, dispatch, stopPolling])
 
   const applyPR = useCallback(async () => {
     if (!findingId) return
     const remediation = findingId ? state.remediations[findingId] : null
     if (!remediation || remediation.status !== 'ready') return
 
+    if (MOCK_MODE) {
+      dispatch({ type: 'status/close' })
+      const finding = state.findings.find(f => f.id === findingId)
+      const repo = finding?.repo_nickname ?? finding?.repo_id ?? 'repo'
+      const prNum = Math.floor(Math.random() * 900) + 100
+      const url = `https://github.com/plexicus/${repo}/pull/${prNum}`
+      setPrUrl(url)
+      dispatch({ type: 'ui/setNotification', payload: `PR #${prNum} created → ${url}` })
+      return
+    }
+
     try {
       const config = await loadConfig()
       const api = new PlexicusApi({ baseUrl: config.serverUrl, token: state.token ?? config.token })
-      const pr = await api.createPR(remediation.id)
-      dispatch({ type: 'ui/setError', payload: null })
-      dispatch({ type: 'ui/setError', payload: `✓ PR created: ${pr.url}` })
+      await api.createPR(remediation.id)
+      dispatch({ type: 'ui/setNotification', payload: 'PR creation triggered — check your repository' })
     } catch (err) {
       dispatch({ type: 'ui/setError', payload: err instanceof Error ? err.message : 'Failed to create PR' })
     }
-  }, [findingId, state.remediations, state.token, dispatch])
+  }, [findingId, state.remediations, state.findings, state.token, dispatch])
 
-  // Clean up polling interval on unmount
   React.useEffect(() => {
     return () => stopPolling()
   }, [stopPolling])
 
   const remediation = findingId ? state.remediations[findingId] ?? null : null
 
-  return { remediation, trigger, applyPR, stopPolling }
+  return { remediation, trigger, applyPR, stopPolling, prUrl }
 }

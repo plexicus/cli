@@ -1,33 +1,48 @@
 import React from 'react'
 import { Box, Text, useInput } from 'ink'
 import { useAppState } from '../state/AppState.js'
+import { accent } from '../utils/theme.js'
 import { useRemediation } from '../hooks/useRemediation.js'
 import { parseDiff } from '../utils/diff.js'
 import { Spinner } from './design-system/Spinner.js'
 import type { Finding } from '../types.js'
 
-interface DiffViewProps {
+interface DiffModalProps {
   finding: Finding
   onClose: () => void
 }
 
-export function DiffView({ finding, onClose }: DiffViewProps) {
+export function DiffModal({ finding, onClose }: DiffModalProps) {
   const { state } = useAppState()
-  const { remediation, trigger, applyPR } = useRemediation(finding.id)
+  const ac = accent(state.theme)
+  const { remediation, trigger, applyPR, prUrl } = useRemediation(finding.id)
 
-  // Auto-trigger if no remediation yet
   React.useEffect(() => {
     if (!remediation) {
       trigger()
     }
   }, [finding.id])
 
+  React.useEffect(() => {
+    const job = state.activeStatusJob
+    if (
+      job?.type === 'remediation' &&
+      (job.status === 'ready' || job.status === 'done') &&
+      (job.id === finding.id || job.id === remediation?.id)
+    ) {
+      trigger()
+    }
+  }, [state.activeStatusJob?.status])
+
+  React.useEffect(() => {
+    if (!prUrl) return
+    const t = setTimeout(onClose, 1500)
+    return () => clearTimeout(t)
+  }, [prUrl])
+
   useInput((input, key) => {
     if (state.inputMode !== 'navigation') return
-    if (key.escape) {
-      onClose()
-      return
-    }
+    if (key.escape) { onClose(); return }
     if (input === 'p' && remediation?.status === 'ready') {
       applyPR()
       return
@@ -39,8 +54,7 @@ export function DiffView({ finding, onClose }: DiffViewProps) {
   const diffLines = isReady && remediation.diff ? parseDiff(remediation.diff) : []
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
-      {/* Header */}
+    <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1} flexGrow={1}>
       <Box>
         <Text bold color="yellow">AI Remediation</Text>
         <Text dimColor> — {finding.title}</Text>
@@ -75,12 +89,11 @@ export function DiffView({ finding, onClose }: DiffViewProps) {
         </Box>
       )}
 
-      {/* Footer */}
-      <Box marginTop={1} borderStyle="single" borderColor="gray">
+      <Box marginTop={1} paddingX={1}>
         {isReady ? (
-          <Text dimColor>[p]create PR  [Esc]close</Text>
+          <Text dimColor>p=create PR  Esc=close</Text>
         ) : (
-          <Text dimColor>[Esc]cancel</Text>
+          <Text dimColor>Esc=cancel</Text>
         )}
       </Box>
     </Box>

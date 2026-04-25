@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react'
-import { Box, Text } from 'ink'
+import { Box, Text, useInput } from 'ink'
 import TextInput from 'ink-text-input'
 import { useAppState } from '../state/AppState.js'
 import { PlexicusApi } from '../services/plexicusApi.js'
@@ -18,9 +18,32 @@ export function LoginForm({ prefilledToken }: LoginFormProps) {
   const [password, setPassword] = useState('')
   const [otp, setOtp] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [partialToken, setPartialToken] = useState<string | null>(null)
+  const [otpSecret, setOtpSecret] = useState<string | null>(null)
+  const [registerUrl, setRegisterUrl] = useState<string | null>(null)
 
-  // Handle --token flag: validate and store immediately
+  const openRegistration = useCallback(async () => {
+    try {
+      const config = await loadConfig()
+      const webUrl = config.webUrl ?? config.serverUrl.replace(/^(https?:\/\/)api\./, '$1')
+      const url = `${webUrl}/register`
+      setRegisterUrl(url)
+      try {
+        const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
+        await Bun.$`${cmd} ${url}`.quiet()
+      } catch {
+        // URL is already shown — user can click it
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useInput((input) => {
+    if (step === 'email' && input === 'r') {
+      openRegistration()
+    }
+  })
+
   React.useEffect(() => {
     if (!prefilledToken) return
     async function storeToken() {
@@ -57,9 +80,8 @@ export function LoginForm({ prefilledToken }: LoginFormProps) {
       const api = new PlexicusApi({ baseUrl: config.serverUrl })
       const response = await api.login(email, value.trim())
 
-      if (response.requires_2fa) {
-        // Stay mounted — switch to OTP mode
-        setPartialToken(response.access_token)
+      if (response.kind === '2fa') {
+        setOtpSecret(response.secret)
         setStep('otp')
         return
       }
@@ -82,17 +104,17 @@ export function LoginForm({ prefilledToken }: LoginFormProps) {
 
     try {
       const config = await loadConfig()
-      const api = new PlexicusApi({ baseUrl: config.serverUrl, token: partialToken ?? undefined })
-      const response = await api.verify2FA(value.trim())
-      const sessionUser = await new PlexicusApi({ baseUrl: config.serverUrl, token: response.access_token }).getSession()
-      await saveConfig({ ...config, token: response.access_token })
-      dispatch({ type: 'auth/set', payload: { user: sessionUser, token: response.access_token } })
+      const api = new PlexicusApi({ baseUrl: config.serverUrl })
+      const accessToken = await api.verify2FA(otpSecret ?? '', value.trim())
+      const sessionUser = await new PlexicusApi({ baseUrl: config.serverUrl, token: accessToken }).getSession()
+      await saveConfig({ ...config, token: accessToken })
+      dispatch({ type: 'auth/set', payload: { user: sessionUser, token: accessToken } })
       setStep('done')
     } catch (err) {
       setError(err instanceof Error ? err.message : '2FA verification failed')
       setStep('otp')
     }
-  }, [partialToken, dispatch])
+  }, [otpSecret, dispatch])
 
   if (step === 'done') return null
 
@@ -151,9 +173,19 @@ export function LoginForm({ prefilledToken }: LoginFormProps) {
         </Box>
       )}
 
-      {step === 'email' && (
-        <Box marginTop={1}>
+      {step === 'email' && !registerUrl && (
+        <Box marginTop={1} flexDirection="column">
           <Text dimColor>Tip: use --token &lt;key&gt; or PLEXICUS_TOKEN=&lt;key&gt; to skip login</Text>
+          <Text dimColor>r=create account in browser</Text>
+        </Box>
+      )}
+
+      {registerUrl && (
+        <Box marginTop={1} flexDirection="column">
+          <Text color="cyan">Registration page opened in browser.</Text>
+          <Text dimColor>If it didn't open, visit:</Text>
+          <Text color="cyan">{registerUrl}</Text>
+          <Text dimColor>Complete registration then log in here.</Text>
         </Box>
       )}
     </Box>

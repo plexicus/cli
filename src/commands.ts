@@ -33,14 +33,12 @@ export type Command = PromptCommand | LocalCommand | LocalJSXCommand
 
 // Memoized command registry — lazy loads modules
 const loadCommands = memoize(async (): Promise<Command[]> => {
-  const [askMod, themeMod, filterMod, configMod] = await Promise.all([
-    import('./commands/ask/index.js'),
+  const [themeMod, filterMod, configMod] = await Promise.all([
     import('./commands/theme/index.js'),
     import('./commands/filter/index.js'),
     import('./commands/config/index.js'),
   ])
   return [
-    askMod.default,
     themeMod.default,
     filterMod.default,
     configMod.default,

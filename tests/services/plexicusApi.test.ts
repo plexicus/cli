@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeAll } from 'bun:test'
 import type { PlexicusApi as PlexicusApiType } from '../../src/services/plexicusApi.js'
 
-// MOCK_MODE is evaluated at module load in plexicusApi.ts.
-// Set env var before the dynamic import so the flag is captured correctly.
+// Set before dynamic import so the module-level MOCK_MODE flag is captured
 process.env.MOCK_PLEXICUS = '1'
 
 let api: PlexicusApiType
@@ -46,17 +45,18 @@ describe('PlexicusApi (mock mode)', () => {
     expect(repos[0]).toHaveProperty('finding_counts')
   })
 
-  it('createRemediation returns a remediation', async () => {
-    const rem = await api.createRemediation('f-001')
-    expect(rem.finding_id).toBe('f-001')
-    expect(rem.status).toBeDefined()
-    expect(['pending', 'ready', 'applied']).toContain(rem.status)
+  it('createRemediation fires and returns void', async () => {
+    const result = await api.createRemediation('f-001')
+    expect(result).toBeUndefined()
   })
 
-  it('login returns access_token', async () => {
+  it('login returns LoginResult with kind=ok', async () => {
     const resp = await api.login('test@example.com', 'password')
-    expect(resp.access_token).toBeDefined()
-    expect(typeof resp.access_token).toBe('string')
+    expect(resp.kind).toBe('ok')
+    if (resp.kind === 'ok') {
+      expect(resp.access_token).toBeDefined()
+      expect(typeof resp.access_token).toBe('string')
+    }
   })
 
   it('getApiTokens returns array', async () => {

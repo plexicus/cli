@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { useAppState } from '../state/AppState.js'
+import { accent } from '../utils/theme.js'
 import type { FindingSeverity, FindingStatus, FindingType } from '../types.js'
 import type { FindingsFilter } from '../state/actions.js'
 
@@ -9,21 +10,26 @@ const STATUSES: FindingStatus[] = ['open', 'mitigated', 'enriched']
 const TYPES: FindingType[] = ['SAST', 'SCA', 'DAST']
 
 // Section indices
-const S_SEVERITY = 0
-const S_REPO = 1
-const S_STATUS = 2
-const S_TYPE = 3
-const S_CVSS_GT = 4
-const S_CVSS_LT = 5
-const S_PRIORITY_GT = 6
-const S_PRIORITY_LT = 7
-const S_LANGUAGE = 8
-const S_CATEGORY = 9
-const S_CWE = 10
-const S_FP = 11
-const SECTION_COUNT = 12
+const S_SORT = 0
+const S_SEVERITY = 1
+const S_REPO = 2
+const S_STATUS = 3
+const S_TYPE = 4
+const S_CVSS_GT = 5
+const S_CVSS_LT = 6
+const S_PRIORITY_GT = 7
+const S_PRIORITY_LT = 8
+const S_LANGUAGE = 9
+const S_CATEGORY = 10
+const S_CWE = 11
+const S_FP = 12
+const SECTION_COUNT = 13
+
+const SORT_OPTIONS = ['priority', 'severity', 'cvss', 'date', 'epss'] as const
 
 interface Draft {
+  sortBy: 'priority' | 'severity' | 'cvss' | 'date' | 'epss'
+  sortDir: 'desc' | 'asc'
   severities: FindingSeverity[]
   repository_ids: string[]
   statuses: FindingStatus[]
@@ -42,6 +48,8 @@ interface Draft {
 
 function initDraft(filter: FindingsFilter): Draft {
   return {
+    sortBy: filter.sort_by ?? 'priority',
+    sortDir: filter.sort_dir ?? 'desc',
     severities: filter.severities ? [...filter.severities] : [],
     repository_ids: filter.repository_ids ? [...filter.repository_ids] : [],
     statuses: filter.statuses ? [...filter.statuses] : [],
@@ -61,6 +69,8 @@ function initDraft(filter: FindingsFilter): Draft {
 
 function draftToFilter(draft: Draft): FindingsFilter {
   const filter: FindingsFilter = {}
+  filter.sort_by = draft.sortBy
+  filter.sort_dir = draft.sortDir
   if (draft.severities.length) filter.severities = draft.severities
   if (draft.repository_ids.length) filter.repository_ids = draft.repository_ids
   if (draft.statuses.length) filter.statuses = draft.statuses
@@ -88,6 +98,7 @@ function isTextSection(s: number): boolean {
   return s === S_LANGUAGE || s === S_CATEGORY || s === S_CWE ||
     s === S_CVSS_GT || s === S_CVSS_LT || s === S_PRIORITY_GT || s === S_PRIORITY_LT
 }
+// S_LANGUAGE=9, S_CATEGORY=10, S_CWE=11, S_CVSS_GT=5, S_CVSS_LT=6, S_PRIORITY_GT=7, S_PRIORITY_LT=8
 
 function Checkbox({ checked, label, active }: { checked: boolean; label: string; active?: boolean }) {
   return (
@@ -99,13 +110,13 @@ function Checkbox({ checked, label, active }: { checked: boolean; label: string;
   )
 }
 
-function Chips({ ids, labels }: { ids: string[]; labels: Map<string, string> }) {
+function Chips({ ids, labels, accentColor }: { ids: string[]; labels: Map<string, string>; accentColor: string }) {
   if (!ids.length) return null
   return (
     <Box flexWrap="wrap" marginBottom={0}>
       {ids.map(id => (
         <Box key={id} marginRight={1}>
-          <Text color="cyan">[{labels.get(id) ?? id}]</Text>
+          <Text color={accentColor}>[{labels.get(id) ?? id}]</Text>
         </Box>
       ))}
     </Box>
@@ -114,6 +125,7 @@ function Chips({ ids, labels }: { ids: string[]; labels: Map<string, string> }) 
 
 export function FilterModal() {
   const { state, dispatch } = useAppState()
+  const ac = accent(state.theme)
 
   const [draft, setDraft] = useState<Draft>(() => initDraft(state.findingsFilter))
   const [section, setSection] = useState(0)
@@ -182,6 +194,25 @@ export function FilterModal() {
 
     // Section-specific handling
     switch (section) {
+      case S_SORT: {
+        if (input === 'j') { setSection(s => Math.min(SECTION_COUNT - 1, s + 1)); setInnerCursor(0); return }
+        if (input === 'k') { setSection(s => Math.max(0, s - 1)); setInnerCursor(0); return }
+        if (key.leftArrow || input === 'h') { setInnerCursor(c => Math.max(0, c - 1)); return }
+        if (key.rightArrow || input === 'l') { setInnerCursor(c => Math.min(SORT_OPTIONS.length - 1, c + 1)); return }
+        if (input === ' ') {
+          const opt = SORT_OPTIONS[innerCursor]
+          if (opt) setDraft(d => ({ ...d, sortBy: opt }))
+          return
+        }
+        if (input === 'd') {
+          setDraft(d => ({ ...d, sortDir: d.sortDir === 'desc' ? 'asc' : 'desc' }))
+          return
+        }
+        if (input === 'r') { reset(); return }
+        if (key.return) { apply(); return }
+        break
+      }
+
       case S_SEVERITY: {
         if (input === 'j') { setSection(s => Math.min(SECTION_COUNT - 1, s + 1)); setInnerCursor(0); return }
         if (input === 'k') { setSection(s => Math.max(0, s - 1)); setInnerCursor(0); return }
@@ -351,11 +382,31 @@ export function FilterModal() {
     <Box
       flexDirection="column"
       borderStyle="round"
-      borderColor="cyan"
+      borderColor={ac}
       paddingX={1}
       marginTop={1}
     >
-      <Text bold color="cyan">Filter Findings  <Text dimColor>[↑↓]section [Space]toggle [Enter]apply [r]reset [Esc]cancel</Text></Text>
+      <Text bold color={ac}>Filter Findings  <Text dimColor>[↑↓]section [Space]toggle [Enter]apply [r]reset [Esc]cancel</Text></Text>
+
+      {/* Sort */}
+      <Box marginTop={1} flexDirection="column">
+        {sectionLabel(S_SORT, 'Sort by')}
+        <Box>
+          {SORT_OPTIONS.map((opt, i) => {
+            const isActive = section === S_SORT && innerCursor === i
+            const isSelected = draft.sortBy === opt
+            return (
+              <Box key={opt} marginRight={2}>
+                <Text color={isActive ? 'cyan' : undefined} inverse={isActive}>
+                  {isSelected ? '[•]' : '[ ]'} {opt}
+                </Text>
+              </Box>
+            )
+          })}
+          <Text dimColor>  {draft.sortDir === 'desc' ? '↓ desc' : '↑ asc'} [d]toggle</Text>
+        </Box>
+        {section === S_SORT && <Text dimColor>[←/→] move  [Space] select  [d] direction</Text>}
+      </Box>
 
       {/* Severity */}
       <Box marginTop={1} flexDirection="column">
@@ -377,7 +428,7 @@ export function FilterModal() {
       <Box marginTop={1} flexDirection="column">
         {sectionLabel(S_REPO, 'Repository')}
         {draft.repository_ids.length > 0 && (
-          <Chips ids={draft.repository_ids} labels={repoNicknames} />
+          <Chips ids={draft.repository_ids} labels={repoNicknames} accentColor={ac} />
         )}
         <Box>
           <Text dimColor>Search: </Text>
@@ -477,7 +528,7 @@ export function FilterModal() {
           <Box>
             {draft.cweIds.map(id => (
               <Box key={id} marginRight={1}>
-                <Text color="cyan">[{id}]</Text>
+                <Text color={ac}>[{id}]</Text>
               </Box>
             ))}
           </Box>

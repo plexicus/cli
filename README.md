@@ -6,7 +6,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/plexicus/cli?label=release)](https://github.com/plexicus/cli/releases/latest)
 [![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun&logoColor=black)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-55%20passing-brightgreen)](https://github.com/plexicus/cli/actions)
+[![Tests](https://img.shields.io/badge/tests-66%20passing-brightgreen)](https://github.com/plexicus/cli/actions)
 
 <!-- Terminal demo — recording coming soon -->
 ```
@@ -34,11 +34,14 @@
 - [Features](#features)
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [Self-hosted setup](#self-hosted-setup)
 - [Panels](#panels)
   - [Findings panel](#findings-panel)
   - [Repos panel](#repos-panel)
+  - [SCM integration](#scm-integration)
   - [AI chat sidebar](#ai-chat-sidebar)
   - [Detail pane](#detail-pane)
+  - [Real-time status modal](#real-time-status-modal)
 - [Keyboard reference](#keyboard-reference)
 - [REPL commands](#repl-commands)
 - [AI chat setup](#ai-chat-setup)
@@ -52,13 +55,16 @@
 ## Features
 
 - **Findings panel** — paginated list of security findings sorted by severity, with CVE IDs, repository, and date
-- **Repos panel** — browse scanned repositories and their scan status
+- **Repos panel** — browse connected repositories with scan status and per-severity finding counts
+- **SCM integration** — connect GitHub, GitLab, Bitbucket Cloud, and Gitea directly from the TUI; OAuth providers open your browser automatically with no token copy-pasting
+- **Real-time status modal** — live WebSocket progress bar and log stream while repos are scanned or AI remediations are generated
+- **Filter modal** — interactive multi-dimensional filter: severity, repository, status, type, CVSS range, priority, language, category, CWE IDs, false positives
 - **AI chat sidebar** — ask questions about your findings using Claude or OpenAI; context-aware, streams live
 - **Remediation workflow** — request AI-generated remediations, review diffs, and open pull requests from the TUI
 - **Fuzzy search** — instantly filter findings by name, CVE ID, or repository
 - **REPL command bar** — `:ask`, `:filter`, `:theme` without touching a config file
 - **Vim navigation** — `j`/`k`, `gg`/`G`, `Enter`, `Esc` — no mouse required
-- **Dark and light themes** — switch live with `:theme dark` or `:theme light`
+- **Themes** — `plexicus` (default), `dark`, `light` — switch live with `:theme <name>`
 - **Zero-dependency install** — single static binary, no Node.js or Bun runtime needed on the target machine
 
 ---
@@ -99,6 +105,14 @@ plexicus --version
 plexicus login
 ```
 
+When `webUrl` is configured (or derived from `serverUrl`), this opens your browser to the Plexicus web app which mints a CLI token automatically — no copy-pasting. Once authorized, the token is saved and you return to the terminal.
+
+Use `--headless` to skip the browser flow and enter email/password directly:
+
+```bash
+plexicus login --headless
+```
+
 Or pass a token directly:
 
 ```bash
@@ -126,6 +140,20 @@ plexicus
 
 ---
 
+## Self-hosted setup
+
+If you are running a self-hosted Plexicus instance, configure all three URLs before launching:
+
+```bash
+plexicus config set serverUrl http://192.168.1.144:8085   # REST API
+plexicus config set webUrl    http://192.168.1.144:3000   # web frontend (for browser redirects)
+plexicus config set wsUrl     ws://192.168.1.144:8085     # WebSocket (real-time status)
+```
+
+`webUrl` is required for browser-based login (`plexicus login` without `--headless`). If it is not set, the TUI attempts to derive it from `serverUrl` by stripping the `api.` subdomain prefix — this works for `https://api.app.plexicus.ai` but not for IP:port addresses. Always set it explicitly for self-hosted installs.
+
+---
+
 ## Panels
 
 ### Findings panel
@@ -139,7 +167,22 @@ The default view. Shows all findings for your connected repositories, sorted by 
 
 ### Repos panel
 
-Press `2` or `Tab` to switch to the repos panel. Shows all repositories connected to your Plexicus account with their current scan status: `idle`, `scanning`, `completed`, or `failed`.
+Press `2` or `Tab` to switch to the repos panel. Shows all repositories connected to your Plexicus account with their current scan status and per-severity finding counts (Critical / High).
+
+Press `a` to connect a new SCM account and import repositories.
+
+### SCM integration
+
+Press `a` in the Repos panel to open the SCM connect flow:
+
+1. **Pick a provider** — GitHub, GitLab, Bitbucket Cloud, or Gitea
+2. **Authorize**
+   - *GitHub / GitLab / Bitbucket*: your browser opens automatically to the OAuth page. Complete authorization there; the TUI polls in the background until your account is linked (no token copy-pasting).
+   - *Gitea*: enter your Gitea server URL and access token directly in the terminal.
+3. **Pick repositories** — fuzzy-search your repos, toggle selections with `Space`, confirm with `Enter`
+4. **Import** — selected repositories are added to Plexicus and will appear in the list
+
+**Headless / SSH sessions**: if the browser cannot be opened, the TUI displays the authorization URL prominently so you can click it in your terminal emulator. The polling flow continues normally once you complete auth on your local machine.
 
 ### AI chat sidebar
 
@@ -164,6 +207,25 @@ Press `Enter` on any finding to open the detail pane:
 - File path and line number
 - Status (`open` / `mitigated` / `enriched`), false positive flag
 - Actions: remediate, create PR, suppress, toggle false positive
+
+### Real-time status modal
+
+A progress modal appears automatically when:
+- A repository scan starts (triggered by adding a repo or a webhook event)
+- An AI remediation is being generated
+
+```
+╭─ Scanning: api-service ────────────────────────╮
+│ ████████████░░░░░░░░░░░░░░░░░░░░░░  38%        │
+│ scanning                                        │
+│ [12:03:01] Cloning repository...               │
+│ [12:03:04] Running Semgrep rules...             │
+│                                                 │
+│ Esc=dismiss (continues in background)           │
+╰─────────────────────────────────────────────────╯
+```
+
+The modal auto-closes two seconds after the job finishes. Press `Esc` to dismiss it early — the underlying job continues running in the background.
 
 ---
 
@@ -190,7 +252,7 @@ Press `Enter` on any finding to open the detail pane:
 | `?` | Show keybindings help |
 | `Ctrl+C` | Exit (press `Esc` first if you are in REPL mode) |
 
-### Finding actions (navigation mode)
+### Finding actions (navigation mode, Findings panel)
 
 | Key | Action |
 |-----|--------|
@@ -199,6 +261,35 @@ Press `Enter` on any finding to open the detail pane:
 | `s` | Mark finding as mitigated |
 | `f` | Toggle false positive (lowercase f) |
 | `F` | Open filter modal (uppercase F / Shift+F) |
+
+### Repos panel actions (navigation mode)
+
+| Key | Action |
+|-----|--------|
+| `a` | Connect SCM account and import repositories |
+| `Enter` | Expand / collapse repo details |
+| `Esc` | Collapse expanded row / return to Findings panel |
+
+### SCM connect flow (`a` to enter)
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` or `↓` / `↑` | Navigate provider / repo list |
+| `Space` | Toggle repository selection |
+| `Enter` | Confirm selection / advance step |
+| `Esc` | Go back / cancel |
+
+### Login screen
+
+| Key | Action |
+|-----|--------|
+| `r` | Open browser to registration page (shown at email step) |
+
+### Status modal
+
+| Key | Action |
+|-----|--------|
+| `Esc` | Dismiss modal (job continues in background) |
 
 ### REPL mode (`:` to enter)
 
@@ -282,6 +373,7 @@ To clear the filter, run `:filter` with no arguments (or restart the TUI).
 Switches the UI colour theme live.
 
 ```
+:theme plexicus   # default — brand violet
 :theme dark
 :theme light
 ```
@@ -328,13 +420,17 @@ Keys passed to `plexicus config set` use snake_case aliases (`llm.api_key`, `llm
 
 | Key (CLI / `config set`) | Key (JSON file) | Description | Default |
 |--------------------------|-----------------|-------------|---------|
-| `serverUrl` | `serverUrl` | Plexicus API base URL | `https://api.app.plexicus.ai` |
+| `serverUrl` | `serverUrl` | Plexicus REST API base URL | `https://api.app.plexicus.ai` |
+| `webUrl` | `webUrl` | Web frontend URL — used for browser-based login (`plexicus login`) and OAuth flows | derived from `serverUrl` |
+| `wsUrl` | `wsUrl` | WebSocket URL for real-time status events | derived from `serverUrl` |
 | `token` | `token` | Authentication token | — |
-| `theme` | `theme` | UI colour theme (`dark` \| `light`) | `dark` |
+| `theme` | `theme` | UI colour theme (`plexicus` \| `dark` \| `light`) | `plexicus` |
 | `llm.provider` | `llm.provider` | LLM provider (`claude` \| `openai`) | — |
 | `llm.api_key` | `llm.apiKey` | API key for the LLM provider | — |
 | `llm.model` | `llm.model` | Model name (optional override) | Provider default |
 | `llm.base_url` | `llm.baseUrl` | Custom base URL (OpenAI-compatible endpoints) | — |
+
+> **Self-hosted note**: `webUrl` and `wsUrl` must be set explicitly when your instance uses IP:port addresses. See [Self-hosted setup](#self-hosted-setup).
 
 Example `~/.config/plexicus/config.json`:
 
@@ -342,7 +438,7 @@ Example `~/.config/plexicus/config.json`:
 {
   "serverUrl": "https://api.app.plexicus.ai",
   "token": "plx_...",
-  "theme": "dark",
+  "theme": "plexicus",
   "llm": {
     "provider": "claude",
     "apiKey": "sk-ant-..."
@@ -374,6 +470,7 @@ plexicus login [options]
 
 Options:
   --token <token>   Authenticate non-interactively with a token
+  --headless        Skip browser-based login; use email/password form instead
 ```
 
 ### `plexicus repos`

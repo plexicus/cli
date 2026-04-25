@@ -1,25 +1,26 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Box, Text, useInput, useApp } from 'ink'
 import { AppStateProvider, useAppState } from '../state/AppState.js'
+import { accent } from '../utils/theme.js'
 import { KeybindingsHelp } from './design-system/KeybindingsHelp.js'
 import { FindingsPanel } from './FindingsPanel.js'
 import { ReposPanel } from './ReposPanel.js'
-import { ChatSidebar } from './ChatSidebar.js'
-import { DetailPane } from './DetailPane.js'
-import { DiffView } from './DiffView.js'
+import { FindingDetailScreen } from './FindingDetailScreen.js'
+import { AIModal } from './AIModal.js'
 import { FilterModal } from './FilterModal.js'
+import { StatusModal } from './StatusModal.js'
 import { LoginForm } from './LoginForm.js'
 import { FirstRunWizard } from './FirstRunWizard.js'
 import { findCommand } from '../commands.js'
+import { useWebSocket } from '../hooks/useWebSocket.js'
+import { filterCommands } from '../utils/replCommands.js'
 import type { Config } from '../services/config.js'
-import type { Panel } from '../types.js'
 
 interface AppProps {
   repo?: string
   cve?: string
   token?: string
   config?: Config
-  initialPanel?: Panel
 }
 
 function AuthGate({
@@ -41,9 +42,7 @@ function AuthGate({
   }
 
   if (!state.isAuthenticated) {
-    return (
-      <LoginForm prefilledToken={token ?? process.env.PLEXICUS_TOKEN} />
-    )
+    return <LoginForm prefilledToken={token ?? process.env.PLEXICUS_TOKEN} />
   }
 
   return <>{children}</>
@@ -51,78 +50,75 @@ function AuthGate({
 
 function AppShell(props: AppProps) {
   const { state, dispatch } = useAppState()
+  useWebSocket(props.config ?? { serverUrl: 'https://api.app.plexicus.ai', llm: {}, theme: 'plexicus' })
   const { exit } = useApp()
   const [replInput, setReplInput] = useState('')
   const [replOutput, setReplOutput] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
-  const [showDiffView, setShowDiffView] = useState(false)
-  const [activeFindingForDiff, setActiveFindingForDiff] = useState<
-    string | null
-  >(null)
   const commandHistory = useRef<string[]>([])
   const historyIndex = useRef(-1)
-  // Always-current refs — avoid stale closures in useInput and useCallback
   const replInputRef = useRef('')
   replInputRef.current = replInput
   const stateRef = useRef(state)
   stateRef.current = state
 
-  // Set initial panel from props on mount
-  useEffect(() => {
-    if (props.initialPanel && props.initialPanel !== state.activePanel) {
-      dispatch({ type: 'ui/setPanel', payload: props.initialPanel })
-    }
-  }, []) // run once on mount only
+  const [replDropdownIndex, setReplDropdownIndex] = useState(0)
+  const replDropdownIndexRef = useRef(0)
+  replDropdownIndexRef.current = replDropdownIndex
 
-  // Global key handler (navigation mode only for most keys)
+  useEffect(() => { setReplDropdownIndex(0) }, [replInput])
+
+  useEffect(() => {
+    if (!state.notification) return
+    const t = setTimeout(() => dispatch({ type: 'ui/setNotification', payload: null }), 5000)
+    return () => clearTimeout(t)
+  }, [state.notification])
+
+  const dropdownItems = (state.inputMode === 'repl' && !state.fuzzyOpen && !replInput.includes(' '))
+    ? filterCommands(replInput)
+    : []
+  const dropdownVisible = dropdownItems.length > 0
+
+  // Breadcrumb
+  const selectedRepo = state.selectedRepoId
+    ? state.repos.find(r => r.id === state.selectedRepoId)
+    : null
+  const selectedFinding = state.selectedFindingId
+    ? state.findings.find(f => f.id === state.selectedFindingId)
+    : null
+
+  const ac = accent(state.theme)
+
   useInput((input, key) => {
     if (showHelp) {
       setShowHelp(false)
       return
     }
 
-    // Filter modal captures all its own keys via its own useInput
     if (state.inputMode === 'filter') return
+    if (state.inputMode === 'scm') return
 
-    // ? opens help in navigation and chat modes; in repl mode it is typeable via char capture
     if (input === '?' && (state.inputMode === 'navigation' || state.inputMode === 'chat')) {
       setShowHelp(true)
       return
     }
 
     if (state.inputMode === 'navigation') {
-      if (input === 'F') {
+      if (input === 'F' && state.screen === 'findings') {
         dispatch({ type: 'filter/open' })
         return
       }
       if (input === '/') {
-        dispatch({ type: 'ui/setFuzzyOpen', payload: true })
+        if (state.screen === 'findings') {
+          dispatch({ type: 'ui/setFuzzyOpen', payload: true })
+        } else if (state.screen === 'repos') {
+          dispatch({ type: 'ui/setFuzzyOpen', payload: true })
+        }
         return
       }
       if (input === ':') {
         setReplInput('')
         dispatch({ type: 'ui/setInputMode', payload: 'repl' })
-        return
-      }
-      if (input === 'c') {
-        dispatch({ type: 'chat/toggle' })
-        dispatch({
-          type: 'ui/setInputMode',
-          payload: state.chatVisible ? 'navigation' : 'chat',
-        })
-        return
-      }
-      if (input === '1') {
-        dispatch({ type: 'ui/setPanel', payload: 'findings' })
-        return
-      }
-      if (input === '2') {
-        dispatch({ type: 'ui/setPanel', payload: 'repos' })
-        return
-      }
-      if (key.tab) {
-        const next = state.activePanel === 'findings' ? 'repos' : 'findings'
-        dispatch({ type: 'ui/setPanel', payload: next })
         return
       }
       if (key.ctrl && input === 'c') {
@@ -139,22 +135,41 @@ function AppShell(props: AppProps) {
         return
       }
       if (key.upArrow) {
-        const h = commandHistory.current
-        if (h.length > 0) {
-          const newIdx = Math.min(historyIndex.current + 1, h.length - 1)
-          historyIndex.current = newIdx
-          setReplInput(h[h.length - 1 - newIdx])
+        const items = filterCommands(replInputRef.current)
+        if (!replInputRef.current.includes(' ') && items.length > 0) {
+          setReplDropdownIndex(prev => (prev <= 0 ? items.length - 1 : prev - 1))
+        } else {
+          const h = commandHistory.current
+          if (h.length > 0) {
+            const newIdx = Math.min(historyIndex.current + 1, h.length - 1)
+            historyIndex.current = newIdx
+            setReplInput(h[h.length - 1 - newIdx])
+          }
         }
         return
       }
       if (key.downArrow) {
-        const newIdx = Math.max(historyIndex.current - 1, -1)
-        historyIndex.current = newIdx
-        setReplInput(
-          newIdx === -1
-            ? ''
-            : commandHistory.current[commandHistory.current.length - 1 - newIdx],
-        )
+        const items = filterCommands(replInputRef.current)
+        if (!replInputRef.current.includes(' ') && items.length > 0) {
+          setReplDropdownIndex(prev => (prev >= items.length - 1 ? 0 : prev + 1))
+        } else {
+          const newIdx = Math.max(historyIndex.current - 1, -1)
+          historyIndex.current = newIdx
+          setReplInput(
+            newIdx === -1
+              ? ''
+              : commandHistory.current[commandHistory.current.length - 1 - newIdx],
+          )
+        }
+        return
+      }
+      if (key.tab) {
+        const items = filterCommands(replInputRef.current)
+        if (!replInputRef.current.includes(' ') && items.length > 0) {
+          const idx = replDropdownIndexRef.current
+          const selected = items[Math.min(idx, items.length - 1)]
+          setReplInput(selected.name + ' ')
+        }
         return
       }
       if (key.backspace || key.delete) {
@@ -167,7 +182,6 @@ function AppShell(props: AppProps) {
         handleReplSubmit(current)
         return
       }
-      // Capture printable characters directly (bypasses TextInput focus issues)
       if (!key.ctrl && !key.meta && input && input.length === 1) {
         setReplInput(prev => prev + input)
         return
@@ -187,7 +201,6 @@ function AppShell(props: AppProps) {
       historyIndex.current = -1
       setReplInput('')
 
-      // Parse command
       const parts = trimmed.startsWith('/')
         ? trimmed.slice(1).split(/\s+/)
         : trimmed.split(/\s+/)
@@ -195,43 +208,44 @@ function AppShell(props: AppProps) {
       const args = parts.slice(1)
 
       try {
-        if (cmdName === 'ask' || cmdName === 'a') {
-          if (args.length === 0) {
-            setReplOutput('Usage: /ask <question>')
-            dispatch({ type: 'ui/setInputMode', payload: 'navigation' })
-            return
-          }
-          if (!state.chatVisible) {
-            dispatch({ type: 'chat/toggle' })
-          }
-          dispatch({ type: 'ui/setInputMode', payload: 'chat' })
-          dispatch({ type: 'chat/setPending', payload: args.join(' ') })
-          setReplOutput(null)
-          return
-        }
-
         if (cmdName === 'theme') {
-          const theme = args[0] as 'dark' | 'light'
-          if (theme === 'dark' || theme === 'light') {
+          const theme = args[0] as 'dark' | 'light' | 'plexicus'
+          if (theme === 'dark' || theme === 'light' || theme === 'plexicus') {
             dispatch({ type: 'ui/setTheme', payload: theme })
             setReplOutput(`Theme set to ${theme}`)
           } else {
-            setReplOutput('Usage: /theme <dark|light>')
+            setReplOutput('Usage: :theme <dark|light|plexicus>')
           }
           dispatch({ type: 'ui/setInputMode', payload: 'navigation' })
           return
         }
 
         if (cmdName === 'filter') {
-          const filter: { severities?: Array<'critical' | 'high' | 'medium' | 'low' | 'informational'> } = {}
-          for (const arg of args) {
-            const [k, v] = arg.split(':')
-            if ((k === 'severity' || k === 'severities') && v) {
-              filter.severities = v.split(',') as typeof filter.severities
-            }
+          dispatch({ type: 'filter/open' })
+          return
+        }
+
+        if (cmdName === 'scan') {
+          const repoId = stateRef.current.selectedRepoId
+          if (!repoId) {
+            setReplOutput('No repo selected — navigate into a repo first')
+            dispatch({ type: 'ui/setInputMode', payload: 'navigation' })
+            return
           }
-          dispatch({ type: 'findings/filter', payload: filter })
-          setReplOutput(`Filter applied`)
+          try {
+            const { loadConfig } = await import('../services/config.js')
+            const { PlexicusApi } = await import('../services/plexicusApi.js')
+            const config = await loadConfig()
+            const api = new PlexicusApi({ baseUrl: config.serverUrl, token: stateRef.current.token ?? config.token })
+            const repo = stateRef.current.repos.find(r => r.id === repoId)
+            await api.requestScan(repoId)
+            dispatch({
+              type: 'status/open',
+              payload: { type: 'repo', id: repoId, name: repo?.nickname ?? repoId, status: 'pending', progress: 0, logs: [] },
+            })
+          } catch (err) {
+            setReplOutput(err instanceof Error ? err.message : 'Scan request failed')
+          }
           dispatch({ type: 'ui/setInputMode', payload: 'navigation' })
           return
         }
@@ -242,7 +256,7 @@ function AppShell(props: AppProps) {
           return
         }
 
-        // Fallback: route through the command registry
+        // Try registered commands
         const cmd = await findCommand(cmdName)
         if (cmd && cmd.type === 'local') {
           const result = await cmd.call(args, { state: stateRef.current, dispatch })
@@ -251,8 +265,11 @@ function AppShell(props: AppProps) {
           return
         }
 
-        setReplOutput(`Unknown command: /${cmdName}`)
-        dispatch({ type: 'ui/setInputMode', payload: 'navigation' })
+        // Smart REPL: unknown input → route to AI modal
+        dispatch({ type: 'chat/clear' })
+        dispatch({ type: 'ai/open', payload: trimmed })
+        dispatch({ type: 'ui/setInputMode', payload: 'chat' })
+        setReplOutput(null)
       } catch (err) {
         setReplOutput(err instanceof Error ? err.message : 'Command failed')
         dispatch({ type: 'ui/setInputMode', payload: 'navigation' })
@@ -261,81 +278,55 @@ function AppShell(props: AppProps) {
     [dispatch, setShowHelp],
   )
 
-  const borderColor = state.theme === 'dark' ? 'cyan' : 'blue'
+  const { sort_by: _sb, sort_dir: _sd, ...filterRest } = state.findingsFilter
+  const hasFilter = Object.values(filterRest as Record<string, unknown>).some(v => {
+    if (Array.isArray(v)) return v.length > 0
+    return v !== undefined && v !== null && v !== false
+  })
 
   return (
     <Box flexDirection="column" height="100%">
-      {/* Header */}
-      <Box borderStyle="single" borderColor={borderColor} paddingX={1}>
-        <Text bold color="cyan">
-          plexicus
-        </Text>
-        <Text> </Text>
-        <Text dimColor>v0.1.0</Text>
-        {state.user && (
+      {/* Breadcrumb header */}
+      <Box borderStyle="bold" borderColor={ac} paddingX={1}>
+        <Text color={ac} bold>Plexicus</Text>
+        {state.screen !== 'repos' && (
           <>
-            <Text dimColor> | </Text>
-            <Text color="green">{state.user.email}</Text>
+            <Text dimColor> › </Text>
+            <Text color={state.screen === 'findings' ? ac : undefined} bold={state.screen === 'findings'}>
+              {selectedRepo ? selectedRepo.nickname : 'All Repos'}
+            </Text>
           </>
         )}
-        {state.error && (
+        {state.screen === 'detail' && (
           <>
-            <Text dimColor> | </Text>
-            <Text color="red">{state.error}</Text>
+            <Text dimColor> › </Text>
+            <Text color={ac} bold>
+              {selectedFinding ? selectedFinding.title.slice(0, 50) : 'Finding'}
+            </Text>
           </>
         )}
-        {state.filterOpen && (
-          <>
-            <Text dimColor> | </Text>
-            <Text color="cyan">FILTER</Text>
-          </>
+        {hasFilter && state.screen === 'findings' && <Text color={ac}>  ● filter</Text>}
+        {state.findingsTotal > 0 && state.screen === 'findings' && (
+          <Text dimColor>  {state.findingsTotal} findings · pg {state.findingsPage + 1}/{state.findingsPageCount}</Text>
         )}
+        {state.error && <Text color="red">  ✗ {state.error}</Text>}
       </Box>
 
-      {/* Main content area */}
-      <Box flexDirection="row" flexGrow={1}>
-        {/* Left: panel + detail */}
-        <Box flexGrow={1} flexDirection="column">
-          {state.activePanel === 'findings' ? (
-            <FindingsPanel repo={props.repo} cve={props.cve} />
-          ) : (
-            <ReposPanel />
-          )}
-          {state.selectedFindingId && !showDiffView && (
-            <DetailPane
-              onRemediate={(f) => {
-                setActiveFindingForDiff(f.id)
-                setShowDiffView(true)
-              }}
-              onPR={(finding) => {
-                setActiveFindingForDiff(finding.id)
-                setShowDiffView(true)
-              }}
-              onSuppress={() => {}}
-              onFalsePositive={() => {}}
-            />
-          )}
-          {showDiffView &&
-            activeFindingForDiff &&
-            (() => {
-              const finding = state.findings.find(
-                (f) => f.id === activeFindingForDiff,
-              )
-              return finding ? (
-                <DiffView
-                  finding={finding}
-                  onClose={() => setShowDiffView(false)}
-                />
-              ) : null
-            })()}
-        </Box>
-
-        {/* Right: chat sidebar */}
-        <ChatSidebar helpOpen={showHelp} />
+      {/* Main content: current screen (or modal overlay) */}
+      <Box flexGrow={1} flexDirection="column">
+        {state.filterOpen
+          ? <FilterModal />
+          : <>
+              {state.screen === 'repos' && <ReposPanel />}
+              {state.screen === 'findings' && <FindingsPanel repo={props.repo} cve={props.cve} />}
+              {state.screen === 'detail' && <FindingDetailScreen />}
+            </>
+        }
       </Box>
 
-      {/* Filter modal */}
-      {state.filterOpen && <FilterModal />}
+      {/* Modals rendered outside flex-grow (status + AI use their own layout) */}
+      {state.activeStatusJob && <StatusModal />}
+      {state.aiModalOpen && <AIModal />}
 
       {/* REPL output */}
       {replOutput && (
@@ -344,26 +335,58 @@ function AppShell(props: AppProps) {
         </Box>
       )}
 
-      {/* REPL input bar — uses direct useInput capture, no TextInput focus dependency */}
+      {/* Autocomplete dropdown */}
+      {dropdownVisible && (
+        <Box borderStyle="single" borderColor="gray" paddingX={1} flexDirection="row">
+          {dropdownItems.map((cmd, i) => {
+            const selected = i === replDropdownIndex
+            return (
+              <Box key={cmd.name} marginRight={2}>
+                <Text color={selected ? ac : undefined} bold={selected} inverse={selected}>
+                  {selected ? `:${cmd.template}` : `:${cmd.name}`}
+                </Text>
+                {selected && <Text dimColor>  {cmd.description}</Text>}
+              </Box>
+            )
+          })}
+        </Box>
+      )}
+
+      {/* Notification bar (PR created, etc.) */}
+      {state.notification && (
+        <Box paddingX={1} borderStyle="single" borderColor="green">
+          <Text color="green">✓ </Text>
+          <Text>{state.notification}</Text>
+        </Box>
+      )}
+
+      {/* REPL bar */}
       <Box borderStyle="single" borderColor="gray" paddingX={1}>
-        <Text color="cyan">&gt; </Text>
+        <Text color={ac}>&gt; </Text>
         {state.inputMode === 'repl' && !state.fuzzyOpen ? (
           replInput
             ? <Text>{replInput}<Text inverse> </Text></Text>
-            : <Text dimColor>Type a command... (/ask, /filter, /theme)<Text inverse> </Text></Text>
+            : dropdownVisible
+              ? <Text><Text inverse> </Text></Text>
+              : <Text dimColor>:command or ask AI…<Text inverse> </Text></Text>
         ) : (
-          <Text dimColor>{replInput || 'Press : for commands, / to search, F to filter'}</Text>
+          <Text dimColor>{replInput || (
+            state.screen === 'findings'
+              ? 'Press : for commands, / to search, F to filter'
+              : state.screen === 'detail'
+                ? 'Press : for commands'
+                : 'Press : for commands, / to search'
+          )}</Text>
         )}
       </Box>
 
-      {/* Keybindings help overlay */}
-      {showHelp && <KeybindingsHelp onDismiss={() => setShowHelp(false)} />}
+      {showHelp && <KeybindingsHelp onDismiss={() => setShowHelp(false)} accentColor={ac} />}
     </Box>
   )
 }
 
 export default function App(props: AppProps) {
-  const initialTheme = props.config?.theme ?? 'dark'
+  const initialTheme = props.config?.theme ?? 'plexicus'
   return (
     <AppStateProvider initialTheme={initialTheme}>
       <AuthGate token={props.token} config={props.config}>

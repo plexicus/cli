@@ -15,32 +15,41 @@ const KEYBINDINGS = [
   ['] / [', 'Next / prev page'],
   ['/', 'Fuzzy search (findings only)'],
   [':', 'Open command REPL'],
-  ['/?', 'Help from REPL'],
   ['c', 'Toggle AI chat sidebar'],
-  [':ask / :a', 'Ask AI a question'],
-  [':filter sev:h', 'Filter by severity (REPL)'],
-  [':config set k v', 'Set a config value'],
   ['Tab / 1 / 2', 'Switch panels'],
   ['?', 'Show this help'],
+  ['── REPL ──', ''],
+  [':ask / :a', 'Ask AI a question'],
+  [':filter', 'Open filter modal'],
+  [':theme dark|light|plexicus', 'Switch UI theme'],
+  [':config set <key> <value>', 'Set a config value'],
+  [':help / :?', 'Show keybindings help'],
 ]
 
 interface KeybindingsHelpProps {
   onDismiss: () => void
+  accentColor?: string
 }
 
-export function KeybindingsHelp({ onDismiss }: KeybindingsHelpProps) {
+export function KeybindingsHelp({ onDismiss, accentColor = '#9241ff' }: KeybindingsHelpProps) {
   useInput(() => onDismiss())
 
   return (
-    <Dialog title="Keybindings">
-      {KEYBINDINGS.map(([key, desc]) => (
-        <Box key={key}>
-          <Box width={16}>
-            <Text color="cyan" bold>{key}</Text>
+    <Dialog title="Keybindings" accentColor={accentColor}>
+      {KEYBINDINGS.map(([key, desc]) =>
+        desc === '' ? (
+          <Box key={key} marginTop={1}>
+            <Text dimColor>{key}</Text>
           </Box>
-          <Text>{desc}</Text>
-        </Box>
-      ))}
+        ) : (
+          <Box key={key}>
+            <Box width={22}>
+              <Text color={accentColor} bold>{key}</Text>
+            </Box>
+            <Text>{desc}</Text>
+          </Box>
+        )
+      )}
     </Dialog>
   )
 }

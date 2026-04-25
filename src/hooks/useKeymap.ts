@@ -15,6 +15,8 @@ export interface KeymapHandlers {
   onFalsePositive?: () => void // f
   onNextPage?: () => void    // ]
   onPrevPage?: () => void    // [
+  onAdd?: () => void         // a
+  onOpenLink?: () => void    // o — open SCM link
 }
 
 interface UseKeymapOptions {
@@ -102,6 +104,16 @@ export function useKeymap(handlers: KeymapHandlers, { inputMode, isActive = true
 
     if (input === '[') {
       handlers.onPrevPage?.()
+      return
+    }
+
+    if (input === 'a') {
+      handlers.onAdd?.()
+      return
+    }
+
+    if (input === 'o') {
+      handlers.onOpenLink?.()
       return
     }
   })

@@ -15,9 +15,11 @@ const LLMConfigSchema = z.object({
 
 export const ConfigSchema = z.object({
   serverUrl: z.string().url().default('https://api.app.plexicus.ai'),
+  webUrl: z.string().url().optional(),
+  wsUrl: z.string().optional(),
   token: z.string().optional(),
   llm: LLMConfigSchema.default({}),
-  theme: z.enum(['dark', 'light']).default('dark'),
+  theme: z.enum(['dark', 'light', 'plexicus']).default('plexicus'),
 })
 
 export type Config = z.infer<typeof ConfigSchema>

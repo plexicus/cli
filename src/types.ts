@@ -36,12 +36,17 @@ export interface Finding {
   cve: string | null
   description: string | null
   mitigation: string | null
+  single_line_code: string | null
+  policy_name: string | null
 }
+
+export type Screen = 'repos' | 'findings' | 'detail'
 
 export interface Repository {
   id: string
   nickname: string
   uri: string
+  repository_branch: string
   active: boolean
   repo_type: string
   status: string
@@ -77,8 +82,16 @@ export interface ApiToken {
   created_at: string
 }
 
+export interface ApiTokenListItem {
+  name: string
+  created_at: string
+  expires_at?: string | null
+  token_type: string
+}
+
 export interface SessionUser {
   id: string
+  client_id: string
   email: string
 }
 
@@ -90,4 +103,24 @@ export interface ChatMessage {
 
 export type Panel = 'findings' | 'repos' | 'chat'
 
-export type InputMode = 'navigation' | 'repl' | 'chat' | 'login' | 'filter'
+export type InputMode = 'navigation' | 'repl' | 'chat' | 'login' | 'filter' | 'scm'
+
+export type ScmProvider = 'github' | 'gitlab' | 'bitbucket' | 'gitea'
+
+export interface ScmRepo {
+  id: string
+  name: string
+  full_name: string
+  html_url?: string
+  clone_url?: string
+  private?: boolean
+}
+
+export interface StatusJob {
+  type: 'repo' | 'remediation'
+  id: string
+  name: string
+  status: string
+  progress: number
+  logs: string[]
+}

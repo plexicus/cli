@@ -14,7 +14,7 @@
         "file_path": "src/auth/login.py",
         "line": 42,
         "cwe": 89,
-        "extra_cwe": [],
+        "extra_cwe": [564],
         "cvssv3_score": 9.8,
         "cvssv4_score": 0.0,
         "prioritization_value": 85,
@@ -30,10 +30,12 @@
         "is_sandbox": false,
         "owasps": ["A03:2021-Injection"],
         "policy_rules": [],
-        "tags": [],
+        "tags": ["injection", "sql"],
         "cve": "CVE-2023-1234",
         "description": "User-supplied input is concatenated directly into SQL query without sanitization.",
-        "mitigation": null
+        "mitigation": "Use parameterized queries or prepared statements. Never concatenate user input into SQL strings.",
+        "single_line_code": "from flask import request, session, redirect, render_template\nimport psycopg2\n\ndef authenticate_user():\n    username = request.form.get('username', '')\n    password = request.form.get('password', '')\n    if not username or not password:\n        return render_template('login.html', error='Missing fields')\n    conn = psycopg2.connect(DATABASE_URL)\n    cursor = conn.cursor()\n    # VULNERABLE: string concatenation into SQL query\n    query = \"SELECT * FROM users WHERE username='\" + username + \"' AND password='\" + password + \"'\"\n    cursor.execute(query)\n    user = cursor.fetchone()\n    if user:\n        session['user_id'] = user[0]\n        session['role'] = user[3]\n        return redirect('/dashboard')\n    return render_template('login.html', error='Invalid credentials')",
+        "policy_name": "OWASP Top 10 2021"
       }
     },
     {
@@ -66,10 +68,12 @@
         "is_sandbox": false,
         "owasps": ["A08:2021-Software and Data Integrity Failures"],
         "policy_rules": [],
-        "tags": [],
+        "tags": ["deserialization", "rce"],
         "cve": "CVE-2023-5678",
         "description": "Untrusted data is deserialized without validation allowing arbitrary code execution.",
-        "mitigation": null
+        "mitigation": "Use YAML.safe_load instead of YAML.load. Never deserialize untrusted data with YAML.load or Marshal.load.",
+        "single_line_code": "require 'yaml'\nrequire 'json'\n\nclass DataImporter\n  def initialize(format: :json)\n    @format = format\n  end\n\n  def import(raw_data)\n    case @format\n    when :yaml\n      # VULNERABLE: YAML.load allows arbitrary object instantiation\n      data = YAML.load(raw_data)\n    when :json\n      data = JSON.parse(raw_data, symbolize_names: true)\n    end\n    process(data)\n  end\n\n  def process(data)\n    data.each { |record| save_record(record) }\n  end\nend",
+        "policy_name": null
       }
     },
     {
@@ -102,10 +106,12 @@
         "is_sandbox": false,
         "owasps": ["A03:2021-Injection"],
         "policy_rules": [],
-        "tags": [],
+        "tags": ["xss", "dom"],
         "cve": null,
         "description": "User input rendered directly to DOM without escaping.",
-        "mitigation": null
+        "mitigation": "Replace dangerouslySetInnerHTML with safe text rendering. Use DOMPurify if HTML must be rendered.",
+        "single_line_code": "import React, { useState, useEffect } from 'react'\n\nexport function SearchResults({ query }) {\n  const [results, setResults] = useState([])\n\n  useEffect(() => {\n    fetch('/api/search?q=' + query)\n      .then(r => r.json())\n      .then(data => setResults(data.items))\n  }, [query])\n\n  // VULNERABLE: dangerouslySetInnerHTML with unsanitized user input\n  return (\n    <div className=\"results\">\n      <h2 dangerouslySetInnerHTML={{ __html: 'Results for: ' + query }} />\n      {results.map(item => (\n        <div key={item.id} dangerouslySetInnerHTML={{ __html: item.title }} />\n      ))}\n      {results.length === 0 && <p>No results found.</p>}\n    </div>\n  )\n}",
+        "policy_name": "OWASP Top 10 2021"
       }
     },
     {
@@ -138,10 +144,12 @@
         "is_sandbox": false,
         "owasps": [],
         "policy_rules": [],
-        "tags": [],
+        "tags": ["secrets", "credentials"],
         "cve": null,
         "description": "AWS access keys committed to repository.",
-        "mitigation": null
+        "mitigation": "Rotate all exposed credentials immediately. Use AWS Secrets Manager or environment injection at deploy time. Add .env.production to .gitignore.",
+        "single_line_code": "# Production Environment Configuration\nNODE_ENV=production\nPORT=3000\nHOST=0.0.0.0\n\n# Database\nDATABASE_URL=postgresql://admin:s3cr3t@db.prod.internal:5432/appdb\n\n# AWS — VULNERABLE: secrets committed to repository\nAWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\nAWS_DEFAULT_REGION=us-east-1\nAWS_S3_BUCKET=prod-assets-bucket\n\n# Stripe\nSTRIPE_SECRET_KEY=sk_example_REDACTED\n\n# Auth\nJWT_SECRET=hardcoded-jwt-secret-do-not-ship\n\n# Redis\nREDIS_URL=redis://cache.prod.internal:6379",
+        "policy_name": null
       }
     },
     {
@@ -174,10 +182,12 @@
         "is_sandbox": false,
         "owasps": ["A01:2021-Broken Access Control"],
         "policy_rules": [],
-        "tags": [],
+        "tags": ["csrf", "access-control"],
         "cve": null,
         "description": "API endpoint modifies state but lacks CSRF token validation.",
-        "mitigation": null
+        "mitigation": "Add CSRF token validation using Flask-WTF or a custom middleware. Verify the Origin and Referer headers as a secondary check.",
+        "single_line_code": "from flask import Flask, request, jsonify, session\nfrom functools import wraps\nimport database as db\n\napp = Flask(__name__)\n\ndef login_required(f):\n    @wraps(f)\n    def decorated(*args, **kwargs):\n        if 'user_id' not in session:\n            return jsonify({'error': 'Unauthorized'}), 401\n        return f(*args, **kwargs)\n    return decorated\n\n@app.route('/api/users/<int:user_id>', methods=['POST'])\n@login_required\ndef update_user(user_id):\n    # VULNERABLE: no CSRF token validation on state-changing endpoint\n    data = request.get_json()\n    db.users.update(user_id, {'email': data.get('email'), 'role': data.get('role')})\n    return jsonify({'status': 'updated', 'user_id': user_id})",
+        "policy_name": "OWASP Top 10 2021"
       }
     }
   ],

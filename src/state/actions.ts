@@ -1,4 +1,4 @@
-import type { Finding, FindingSeverity, FindingStatus, FindingType, Repository, Remediation, ChatMessage, Panel, InputMode, SessionUser } from '../types.js'
+import type { Finding, FindingSeverity, FindingStatus, FindingType, Repository, Remediation, ChatMessage, Panel, InputMode, SessionUser, StatusJob, Screen } from '../types.js'
 
 export interface FindingsFilter {
   severities?: FindingSeverity[]
@@ -15,6 +15,8 @@ export interface FindingsFilter {
   categories?: string[]
   is_false_positive?: boolean
   finding_type?: 'app' | 'scm' | 'cloud' | 'registry'
+  sort_by?: 'priority' | 'severity' | 'cvss' | 'date' | 'epss'
+  sort_dir?: 'desc' | 'asc'
 }
 
 export type Action =
@@ -32,15 +34,25 @@ export type Action =
   | { type: 'remediation/set'; payload: Remediation }
   | { type: 'chat/append'; payload: ChatMessage }
   | { type: 'chat/streaming'; payload: boolean }
-  | { type: 'chat/toggle' }
   | { type: 'chat/chunk'; payload: { messageIndex: number; chunk: string } }
   | { type: 'chat/done' }
   | { type: 'chat/clear' }
   | { type: 'ui/setPanel'; payload: Panel }
-  | { type: 'ui/setTheme'; payload: 'dark' | 'light' }
+  | { type: 'ui/setTheme'; payload: 'dark' | 'light' | 'plexicus' }
   | { type: 'ui/setError'; payload: string | null }
+  | { type: 'ui/setNotification'; payload: string | null }
   | { type: 'ui/setInputMode'; payload: InputMode }
-  | { type: 'chat/setPending'; payload: string | null }
   | { type: 'ui/setFuzzyOpen'; payload: boolean }
   | { type: 'filter/open' }
   | { type: 'filter/close' }
+  | { type: 'scm/open' }
+  | { type: 'scm/close' }
+  | { type: 'status/open'; payload: StatusJob }
+  | { type: 'status/update'; payload: Partial<StatusJob> & { id: string } }
+  | { type: 'status/close' }
+  | { type: 'ws/setConnected'; payload: boolean }
+  | { type: 'nav/pushScreen'; payload: Screen }
+  | { type: 'nav/popScreen' }
+  | { type: 'repo/select'; payload: string | null }
+  | { type: 'ai/open'; payload?: string }
+  | { type: 'ai/close' }

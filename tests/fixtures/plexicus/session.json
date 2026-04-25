@@ -1,4 +1,5 @@
 {
-  "id": "user-001",
+  "user_id": "user-001",
+  "client_id": "client-001",
   "email": "engineer@plexicus.ai"
 }

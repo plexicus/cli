@@ -2,6 +2,10 @@
 import { program } from '@commander-js/extra-typings'
 import React from 'react'
 import { render } from 'ink'
+import chalk from 'chalk'
+
+// Force true-color (24-bit) rendering — some terminals report lower capability
+chalk.level = 3
 
 const { version } = await import('../package.json', { with: { type: 'json' } })
 
@@ -14,9 +18,11 @@ program
   .option('--token <token>', 'authenticate with a Bearer token')
   .action(async (options) => {
     const { loadConfig } = await import('./services/config.js')
+    const { printSplash } = await import('./assets/splash.js')
     const config = await loadConfig()
 
-    // Resolve token: --token flag > PLEXICUS_TOKEN env > config file
+    printSplash(version, config.serverUrl)
+
     const token = options.token ?? process.env.PLEXICUS_TOKEN ?? config.token
 
     const { default: App } = await import('./components/App.js')
@@ -27,15 +33,43 @@ program
   .command('login')
   .description('Authenticate with the Plexicus API')
   .option('--token <token>', 'skip interactive login, store this token directly')
+  .option('--headless', 'use email/password instead of browser redirect')
   .action(async (options) => {
-    const { loadConfig } = await import('./services/config.js')
+    const { loadConfig, saveConfig } = await import('./services/config.js')
     const { AppStateProvider } = await import('./state/AppState.js')
     const { LoginForm } = await import('./components/LoginForm.js')
     const config = await loadConfig()
-    const loginEl = React.createElement(LoginForm, { prefilledToken: options.token })
-    render(
-      React.createElement(AppStateProvider, { initialTheme: config.theme, children: loginEl }),
-    )
+
+    if (options.token) {
+      const loginEl = React.createElement(LoginForm, { prefilledToken: options.token })
+      render(React.createElement(AppStateProvider, { initialTheme: config.theme, children: loginEl }))
+      return
+    }
+
+    const { canOpenBrowser } = await import('./utils/canOpenBrowser.js')
+    const { deriveWebUrl } = await import('./utils/url.js')
+
+    const webUrl = deriveWebUrl(config)
+    const useWebRedirect = !options.headless && !!webUrl && canOpenBrowser()
+
+    if (useWebRedirect) {
+      try {
+        const { loginViaWebRedirect } = await import('./services/auth/webRedirect.js')
+        const { token, email } = await loginViaWebRedirect(webUrl!)
+        await saveConfig({ ...config, token })
+        console.log(chalk.green(`✓ Authenticated as ${email}`))
+        process.exit(0)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.warn(chalk.yellow(`Browser auth failed (${msg}), falling back to password login.`))
+      }
+    } else if (!options.headless && !webUrl) {
+      console.warn(chalk.yellow('webUrl not configured — falling back to email/password login.'))
+      console.warn(chalk.gray('  Set it with: plexicus config set webUrl https://your-app-domain'))
+    }
+
+    const loginEl = React.createElement(LoginForm, {})
+    render(React.createElement(AppStateProvider, { initialTheme: config.theme, children: loginEl }))
   })
 
 program
@@ -46,7 +80,7 @@ program
     const { default: App } = await import('./components/App.js')
     const config = await loadConfig()
     const token = process.env.PLEXICUS_TOKEN ?? config.token
-    render(React.createElement(App, { config, token, initialPanel: 'repos' }))
+    render(React.createElement(App, { config, token }))
   })
 
 program

@@ -2,7 +2,28 @@ import { useEffect, useRef, useMemo } from 'react'
 import { useAppState } from '../state/AppState.js'
 import { PlexicusApi } from '../services/plexicusApi.js'
 import { loadConfig } from '../services/config.js'
-import { sortBySeverity } from '../utils/severity.js'
+import { severityRank } from '../utils/severity.js'
+import type { Finding } from '../types.js'
+
+function sortFindings(findings: Finding[], sortBy: string | undefined, sortDir: string | undefined): Finding[] {
+  const dir = sortDir === 'asc' ? 1 : -1
+  return [...findings].sort((a, b) => {
+    switch (sortBy ?? 'priority') {
+      case 'priority':
+        return dir * ((b.prioritization_value ?? -1) - (a.prioritization_value ?? -1))
+      case 'severity':
+        return dir * (severityRank(b.severity) - severityRank(a.severity))
+      case 'cvss':
+        return dir * ((b.cvssv3_score ?? 0) - (a.cvssv3_score ?? 0))
+      case 'date':
+        return dir * (new Date(b.date).getTime() - new Date(a.date).getTime())
+      case 'epss':
+        return dir * ((b.estimated_epss ?? 0) - (a.estimated_epss ?? 0))
+      default:
+        return 0
+    }
+  })
+}
 
 export function useFindings(opts?: { cve?: string }) {
   const { state, dispatch } = useAppState()
@@ -39,7 +60,7 @@ export function useFindings(opts?: { cve?: string }) {
 
         if (controller.signal.aborted) return
 
-        const sorted = sortBySeverity(findings)
+        const sorted = sortFindings(findings, state.findingsFilter.sort_by, state.findingsFilter.sort_dir)
         dispatch({ type: 'findings/set', payload: sorted })
         dispatch({ type: 'findings/setPagination', payload: { total, pageCount } })
 

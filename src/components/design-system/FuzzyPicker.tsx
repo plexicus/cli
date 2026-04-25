@@ -8,6 +8,7 @@ interface FuzzyPickerProps<T> {
   onSelect: (item: T) => void
   onCancel: () => void
   placeholder?: string
+  accentColor?: string
 }
 
 export function FuzzyPicker<T>({
@@ -16,6 +17,7 @@ export function FuzzyPicker<T>({
   onSelect,
   onCancel,
   placeholder = 'Search...',
+  accentColor = '#9241ff',
 }: FuzzyPickerProps<T>) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
@@ -44,9 +46,9 @@ export function FuzzyPicker<T>({
   }, [visible, cursor, onSelect, onCancel])
 
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor="cyan" paddingX={1}>
+    <Box flexDirection="column" borderStyle="bold" borderColor={accentColor} paddingX={1}>
       <Box>
-        <Text color="cyan">/ </Text>
+        <Text color={accentColor}>/ </Text>
         <TextInput
           value={query}
           onChange={handleChange}
