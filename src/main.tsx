@@ -73,6 +73,31 @@ program
   })
 
 program
+  .command('logout')
+  .description('Sign out and remove stored credentials')
+  .action(async () => {
+    const { loadConfig, saveConfig } = await import('./services/config.js')
+    const config = await loadConfig()
+    const token = process.env.PLEXICUS_TOKEN ?? config.token
+
+    if (!token) {
+      console.log(chalk.yellow('Not logged in.'))
+      process.exit(0)
+    }
+
+    try {
+      const { PlexicusApi } = await import('./services/plexicusApi.js')
+      const api = new PlexicusApi({ baseUrl: config.serverUrl, token })
+      await api.logout()
+    } catch {
+      // best-effort — clear local token regardless of server response
+    }
+
+    await saveConfig({ ...config, token: undefined })
+    console.log(chalk.green('✓ Logged out successfully.'))
+  })
+
+program
   .command('repos')
   .description('Browse and manage repositories')
   .action(async () => {
