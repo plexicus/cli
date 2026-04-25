@@ -191,7 +191,9 @@ Known commands: `:filter`, `:scan`, `:theme <plexicus|dark|light>`, `:config set
 
 `FilterModal` renders in `AppShell` when `state.filterOpen`. Holds a local draft of `FindingsFilter`; dispatches only on Apply (Enter).
 
-`FindingDetailScreen` — Screen 3. Renders inline `DiffModal` when `r` is pressed. SCM link uses `src/utils/scm.ts`: `scmUrl(repo, finding)` builds the URL, `openScmLink(url)` tries `open`/`xdg-open`, falls back to `pbcopy`/`xclip` and returns `{ opened: false, url }` for UI display.
+`FindingDetailScreen` — Screen 3. Renders inline `DiffModal` when `r` is pressed (`r=fix` for unfixed findings, `r=view remediation` for `ready` or `mitigated`). Status display: `open` (yellow), `enriched` (cyan, ⊕), `ready` (magenta, ⚡ — has a remediation ready), `mitigated` (green, ✓). SCM link uses `src/utils/scm.ts`: `scmUrl(repo, finding)` builds the URL, `openScmLink(url)` tries `open`/`xdg-open`, falls back to `pbcopy`/`xclip` and returns `{ opened: false, url }` for UI display.
+
+`DiffModal` — inline overlay for AI remediation. Shows 12 scrollable lines of unified diff (j/k or ↑↓ to scroll). When opened: checks for existing ready remediation via HTTP, then creates one if missing, opens StatusModal, and sends a WS `status-remediation` request. HTTP polling (3s interval, 15 min max) runs as fallback. `p` creates a PR, Esc cancels.
 
 `AIModal` — overlay rendered when `state.aiModalOpen`. Uses `useLLMStream`. Auto-sends `state.aiModalPrompt` on mount. TextInput for follow-up questions.
 
@@ -200,18 +202,18 @@ Known commands: `:filter`, `:scan`, `:theme <plexicus|dark|light>`, `:config set
 `StatusModal` renders in `AppShell` when `state.activeStatusJob !== null`. Auto-closes 2s after finish events.
 
 ### WebSocket integration (`src/services/websocket.ts`, `src/hooks/useWebSocket.ts`)
-`plexicusWs` singleton connects after login: `wss://{serverUrl}/ws/{user.client_id}?token={token}` (note `/ws/` prefix and `client_id` not `user.id` — backend route is `WS /ws/{client_id}` and rejects if decoded client_id != path param). Reconnects with exponential backoff (1s → 30s max). `useWebSocket(config)` hook is called in `AppShell` and routes events to AppState:
+`plexicusWs` singleton connects after login: `wss://{serverUrl}/ws/{user.client_id}?token={token}` (note `/ws/` prefix and `client_id` not `user.id` — backend route is `WS /ws/{client_id}` and rejects if decoded client_id != path param). Reconnects with exponential backoff (1s → 30s max). `plexicusWs.send(data)` sends a JSON message to the server (used to request remediation status). `useWebSocket(config)` hook is called in `AppShell` and routes events to AppState:
 - `trigger-check-repository` → `status/open` (repo scan started)
 - `status-repository` → `status/update` (progress + log lines)
 - `trigger-finish-repository` → `status/update` + auto-close after 2s
-- `status-remediation` → `status/update`; auto-close if `processing_status === 'ready'`
-- `workflow_progress_update` → `status/update` (bulk remediation)
+- `status-remediation` → parses `msg.data` via `RemediationSchema`, dispatches `remediation/set`; auto-closes StatusModal on `ready`/`error`. The server sends this in response to a client request `{ request_type: "status-remediation", finding_id }`.
+- `workflow_status` (with `page_console === "remediation_generation"`) → `status/update` (remediation generation progress)
 
 `wsUrl` config field overrides derived URL. Default derivation: `serverUrl.replace(/^https?:\/\//, 'wss://')`.
 Set via: `bun run src/main.tsx config set wsUrl wss://custom.example.com`
 
 ### API response format (JSON:API)
-All findings and repo responses are `{ data: [{ id, attributes: {...} }], meta: { pagination: {...} } }`. `plexicusApi.ts` parses these via Zod schemas and maps to flat `Finding`/`Repository` types. Field renames: `name→title`, `file→file_path`, `cvss_score→cvssv3_score`, `created_at→date`, `repo→repo_id+repo_nickname`, `cve_id→cve`. Status values: `open | mitigated | enriched` (no more `false_positive` — use `is_false_positive: boolean`).
+All findings and repo responses are `{ data: [{ id, attributes: {...} }], meta: { pagination: {...} } }`. `plexicusApi.ts` parses these via Zod schemas and maps to flat `Finding`/`Repository` types. Field renames: `name→title`, `file→file_path`, `cvss_score→cvssv3_score`, `created_at→date`, `repo→repo_id+repo_nickname`, `cve_id→cve`. Finding status values (from libcovulor): `enriched` (default/processed), `ready` (has a ready remediation), `completed/pr_submitted/solved` → mapped to `'mitigated'`, `issued` → `'enriched'`, `pending_input` → `'open'`. Use `is_false_positive: boolean` (no `false_positive` status). SCM repos endpoint `GET /vulnerability_tool/repositories/{provider}` returns `{ success, data: { repositories: [...] } }` — `fetch()` auto-unwraps to `{ repositories: [...] }`, so read `raw.repositories` directly (not `raw.data.repositories`).
 
 ### Server-side filtering (`src/hooks/useFindings.ts`)
 `useEffect` watches `[state.isAuthenticated, state.findingsFilter, state.findingsPage]`. Uses `AbortController` to cancel stale requests. Builds a `repoMap` from `state.repos` for `repo_nickname` denormalization. Pagination comes from `meta.pagination` in the response.

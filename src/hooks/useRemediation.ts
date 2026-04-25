@@ -2,15 +2,18 @@ import React, { useCallback, useRef, useState } from 'react'
 import { useAppState } from '../state/AppState.js'
 import { PlexicusApi } from '../services/plexicusApi.js'
 import { loadConfig } from '../services/config.js'
+import { friendlyError } from '../utils/errors.js'
+import { plexicusWs } from '../services/websocket.js'
 
 const MOCK_MODE = process.env.MOCK_PLEXICUS === '1'
-const POLL_INTERVAL_MS = 2000
-const MAX_POLL_ATTEMPTS = 30
+const POLL_INTERVAL_MS = 3000
+const MAX_POLL_ATTEMPTS = 300  // 15 minutes at 3s intervals
 
 export function useRemediation(findingId: string | null) {
   const { state, dispatch } = useAppState()
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [prUrl, setPrUrl] = useState<string | null>(null)
+  const [localError, setLocalError] = useState<string | null>(null)
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -77,15 +80,29 @@ export function useRemediation(findingId: string | null) {
       return
     }
 
+    setLocalError(null)
     try {
       const config = await loadConfig()
       const api = new PlexicusApi({ baseUrl: config.serverUrl, token: state.token ?? config.token })
+
+      const existing = await api.getRemediations(findingId)
+      const ready = existing.find(r => r.finding_id === findingId && r.status === 'ready')
+      if (ready) {
+        dispatch({ type: 'remediation/set', payload: ready })
+        return
+      }
 
       dispatch({
         type: 'remediation/set',
         payload: { id: `rem-${findingId}`, finding_id: findingId, status: 'pending', diff: null, auto_create: false },
       })
+      dispatch({
+        type: 'status/open',
+        payload: { type: 'remediation', id: findingId, name: 'AI Remediation', status: 'pending', progress: 0, logs: [] },
+      })
       await api.createRemediation(findingId)
+      // Request WS push so the server notifies us when done (supplements polling)
+      plexicusWs.send({ request_type: 'status-remediation', finding_id: findingId })
 
       let attempts = 0
       stopPolling()
@@ -93,7 +110,9 @@ export function useRemediation(findingId: string | null) {
         attempts++
         if (attempts >= MAX_POLL_ATTEMPTS) {
           stopPolling()
-          dispatch({ type: 'ui/setError', payload: 'Remediation timed out after 60s' })
+          const msg = 'Remediation timed out — the server is taking too long'
+          setLocalError(msg)
+          dispatch({ type: 'ui/setError', payload: msg })
           return
         }
 
@@ -102,17 +121,26 @@ export function useRemediation(findingId: string | null) {
           const updated = remediations.find(r => r.finding_id === findingId)
           if (updated) {
             dispatch({ type: 'remediation/set', payload: updated })
-            if (updated.status === 'ready') {
+            if (updated.status === 'ready' || updated.status === 'error') {
               stopPolling()
+              if (updated.status === 'error') {
+                const msg = updated.error_message ?? 'Remediation failed — check your quota or try again'
+                setLocalError(msg)
+                dispatch({ type: 'ui/setError', payload: msg })
+              }
             }
           }
-        } catch {
+        } catch (pollErr) {
           stopPolling()
-          dispatch({ type: 'ui/setError', payload: 'Failed to poll remediation status' })
+          const msg = friendlyError(pollErr, 'Failed to poll remediation status')
+          setLocalError(msg)
+          dispatch({ type: 'ui/setError', payload: msg })
         }
       }, POLL_INTERVAL_MS)
     } catch (err) {
-      dispatch({ type: 'ui/setError', payload: err instanceof Error ? err.message : 'Failed to create remediation' })
+      const msg = friendlyError(err, 'Failed to create remediation')
+      setLocalError(msg)
+      dispatch({ type: 'ui/setError', payload: msg })
     }
   }, [findingId, state.token, state.findings, state.remediations, dispatch, stopPolling])
 
@@ -138,7 +166,9 @@ export function useRemediation(findingId: string | null) {
       await api.createPR(remediation.id)
       dispatch({ type: 'ui/setNotification', payload: 'PR creation triggered — check your repository' })
     } catch (err) {
-      dispatch({ type: 'ui/setError', payload: err instanceof Error ? err.message : 'Failed to create PR' })
+      const msg = friendlyError(err, 'Failed to create PR')
+      setLocalError(msg)
+      dispatch({ type: 'ui/setError', payload: msg })
     }
   }, [findingId, state.remediations, state.findings, state.token, dispatch])
 
@@ -148,5 +178,5 @@ export function useRemediation(findingId: string | null) {
 
   const remediation = findingId ? state.remediations[findingId] ?? null : null
 
-  return { remediation, trigger, applyPR, stopPolling, prUrl }
+  return { remediation, trigger, applyPR, stopPolling, prUrl, error: localError }
 }

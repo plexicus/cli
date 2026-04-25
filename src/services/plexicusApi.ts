@@ -290,17 +290,41 @@ export class PlexicusApi {
       return RemediationsCollectionSchema.parse({ items: [data] }).items
     }
     const query = findingId ? `?finding_id=${findingId}` : ''
-    const raw = await this.fetch<unknown>('GET', `/remediations${query}`, undefined, undefined, 'raw')
-    return RemediationsCollectionSchema.parse(raw).items
+    let raw: unknown
+    try {
+      raw = await this.fetch<unknown>('GET', `/remediations${query}`, undefined, undefined, 'raw')
+    } catch (err) {
+      // 404 = no remediation exists yet — expected when finding has never been remediated
+      if (err instanceof PlexicusApiError && err.statusCode === 404) return []
+      throw err
+    }
+    // Normalise the many shapes the API can return
+    let toparse: unknown = raw
+    if (Array.isArray(raw)) {
+      toparse = { items: raw }
+    } else if (raw && typeof raw === 'object') {
+      const obj = raw as Record<string, unknown>
+      if ('code' in obj && obj.result && typeof obj.result === 'object') {
+        // { code: 200, result: {...} } — single remediation wrapped in code/result envelope
+        toparse = { items: [obj.result] }
+      } else if (!('items' in obj) && Array.isArray(obj.data)) {
+        toparse = { items: obj.data }
+      } else if ('_id' in obj || ('id' in obj && ('finding_id' in obj || 'finding_ids' in obj))) {
+        toparse = { items: [raw] }
+      }
+    }
+    const result = RemediationsCollectionSchema.safeParse(toparse)
+    if (result.success) return result.data.items
+    return []
   }
 
   async createPR(remediationId: string): Promise<void> {
     if (MOCK_MODE) return
-    // PR URL arrives via WS status-remediation.reference_url
+    if (!remediationId) throw new Error('Cannot create PR: remediation ID is missing')
     await this.fetch<void>('POST', '/pull_request', { remediation_id: remediationId }, undefined, 'raw')
   }
 
-  async getRepositories(page = 0): Promise<ReposResult> {
+  async getRepositories(page = 0, sourceControl?: string): Promise<ReposResult> {
     if (MOCK_MODE) {
       const data = await loadFixture('repos')
       return parseRepos(data)
@@ -310,6 +334,7 @@ export class PlexicusApi {
       pagination_pageSize: '100',
       pagination_with_count: 'true',
     })
+    if (sourceControl) qs.set('filters[source_control]', sourceControl)
     const raw = await this.fetch<unknown>('GET', `/repositories?${qs}`, undefined, undefined, 'jsonapi')
     return parseRepos(raw)
   }
@@ -337,31 +362,82 @@ export class PlexicusApi {
 
   async checkScmValidity(): Promise<Record<string, boolean>> {
     if (MOCK_MODE) return { github: false, gitlab: false, bitbucket: false, gitea: false }
-    return this.fetch<Record<string, boolean>>('GET', '/integrations/scm/check_validity')
+    // Response shape: { status: bool, message: str, data: { github: bool, ... } }
+    const raw = await this.fetch<unknown>('GET', '/integrations/scm/check_validity', undefined, undefined, 'raw')
+    if (raw && typeof raw === 'object' && 'data' in raw && raw.data && typeof raw.data === 'object') {
+      return raw.data as Record<string, boolean>
+    }
+    return (raw ?? {}) as Record<string, boolean>
   }
 
-  async getScmRepos(provider: string): Promise<ScmRepo[]> {
+  async getScmRepos(provider: string, baseUrl?: string): Promise<ScmRepo[]> {
     if (MOCK_MODE) {
       return [
         { id: '1', name: 'api-service', full_name: 'org/api-service', html_url: 'https://github.com/org/api-service' },
         { id: '2', name: 'frontend-app', full_name: 'org/frontend-app', html_url: 'https://github.com/org/frontend-app' },
       ]
     }
-    // FIXME-13: /api/oauth/{provider}/repos doesn't exist — use vulnerability_tool endpoint
-    const raw = await this.fetch<unknown>('GET', `/vulnerability_tool/repositories/${provider}?page=1&per_page=100`)
-    if (Array.isArray(raw)) return raw as ScmRepo[]
-    return []
+    const PER_PAGE = 100
+    const allRepos: ScmRepo[] = []
+    let page = 1
+    while (true) {
+      const qs = new URLSearchParams({ page: String(page), per_page: String(PER_PAGE) })
+      if (baseUrl) qs.set('custom_domain', baseUrl)
+      // fetch() auto-unwraps { success, data: {...} } → raw IS { repositories: [...], total_count, ... }
+      const raw = await this.fetch<unknown>('GET', `/vulnerability_tool/repositories/${provider}?${qs}`)
+      const envelope = raw as Record<string, any>
+      const repos: any[] = Array.isArray(envelope?.repositories)
+        ? envelope.repositories
+        : (Array.isArray(raw) ? raw : [])
+      allRepos.push(...repos.map(r => ({
+        id: String(r.uuid ?? r.id ?? ''),
+        name: String(r.slug ?? r.name ?? ''),
+        full_name: String(r.full_name ?? r.name_with_namespace ?? r.name ?? ''),
+        html_url: r.html_url ?? r.web_url ?? r.links?.html?.href ?? undefined,
+        clone_url: r.clone_url ?? r.http_url_to_repo ?? undefined,
+        private: r.private ?? r.is_private ?? r.visibility === 'private',
+      } as ScmRepo)))
+      if (repos.length < PER_PAGE) break
+      page++
+    }
+    return allRepos
   }
 
-  async saveGiteaConnector(_giteaUrl: string, _token: string): Promise<void> {
+  async connectWithToken(provider: string, token: string, baseUrl?: string): Promise<void> {
     if (MOCK_MODE) return
-    // FIXME-14: Gitea connector backend endpoint does not exist yet
-    throw new Error('Gitea connector not yet supported — backend endpoint pending')
+    // Use PUT /client/plugin/{provider} — same path the web frontend uses
+    if (provider === 'gitea') {
+      const url = new URL(baseUrl ?? 'http://localhost:3000')
+      const port = url.port || (url.protocol === 'https:' ? '443' : '80')
+      await this.fetch<void>('PUT', '/client/plugin/gitea', {
+        protocol: url.protocol.replace(':', ''),
+        oauth_token: token,
+        hosted_domain: url.hostname,
+        port,
+      }, undefined, 'raw')
+      // save_token registers the encoded token in the auth system
+      await this.fetch<void>('POST', '/save_token', {
+        token: `${url.protocol.replace(':', '')}:${token}:${url.hostname}:${port}`,
+        source_control: 'gitea',
+      }, undefined, 'raw')
+    } else if (provider === 'gitlab') {
+      await this.fetch<void>('PUT', '/client/plugin/gitlab', {
+        oauth_token: token,
+        hosted_url: baseUrl ?? 'https://gitlab.com',
+      }, undefined, 'raw')
+    } else if (provider === 'bitbucket') {
+      await this.fetch<void>('PUT', '/client/plugin/bitbucket_cloud', {
+        oauth_token: token,
+      }, undefined, 'raw')
+    } else {
+      await this.fetch<void>('PUT', `/client/plugin/${provider}`, {
+        oauth_token: token,
+      }, undefined, 'raw')
+    }
   }
 
   async testScmConnection(provider: string): Promise<boolean> {
     if (MOCK_MODE) return true
-    // FIXME-15: switched from POST /api/oauth/test-connection to GET /integrations/scm/test_connection/{provider}
     const data = await this.fetch<{ success: boolean }>('GET', `/integrations/scm/test_connection/${provider}`, undefined, undefined, 'raw')
     return data.success
   }

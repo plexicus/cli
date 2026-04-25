@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Box, Text, useInput } from 'ink'
-import TextInput from 'ink-text-input'
+import { SmartTextInput as TextInput } from './design-system/SmartTextInput.js'
 import { useAppState } from '../state/AppState.js'
 import { accent } from '../utils/theme.js'
 import { useLLMStream } from '../hooks/useLLMStream.js'

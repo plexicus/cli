@@ -1,6 +1,6 @@
 export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'informational'
-export type FindingStatus = 'open' | 'mitigated' | 'enriched'
-export type FindingType = 'SAST' | 'SCA' | 'DAST'
+export type FindingStatus = 'open' | 'mitigated' | 'enriched' | 'ready'
+export type FindingType = string
 
 export interface Finding {
   id: string
@@ -67,8 +67,9 @@ export interface Remediation {
   id: string
   finding_id: string
   diff: string | null
-  status: 'pending' | 'ready' | 'applied'
+  status: 'pending' | 'ready' | 'applied' | 'error'
   auto_create: boolean
+  error_message?: string | null
 }
 
 export interface PR {

@@ -6,15 +6,23 @@ const SEVERITY_MAP: Record<string, string> = {
 }
 
 const STATUS_MAP: Record<string, string> = {
-  open: 'open', ready: 'open', enriched: 'enriched', mitigated: 'mitigated',
+  open: 'open',
+  pending_input: 'open',
+  enriched: 'enriched',
+  issued: 'enriched',
+  ready: 'ready',
+  completed: 'mitigated',
+  pr_submitted: 'mitigated',
+  solved: 'mitigated',
+  mitigated: 'mitigated',
 }
 
 const FindingAttributesSchema = z.object({
   title: z.string(),
   severity: z.string().transform(s => (SEVERITY_MAP[s.toLowerCase()] ?? 'low') as 'critical' | 'high' | 'medium' | 'low' | 'informational'),
   severity_numerical: z.number().nullable().default(null),
-  status: z.string().transform(s => (STATUS_MAP[s.toLowerCase()] ?? 'open') as 'open' | 'mitigated' | 'enriched'),
-  type: z.enum(['SAST', 'SCA', 'DAST']).nullable().default(null),
+  status: z.string().transform(s => (STATUS_MAP[s.toLowerCase()] ?? 'open') as 'open' | 'mitigated' | 'enriched' | 'ready'),
+  type: z.string().nullable().optional().transform(v => v ?? null),
   category: z.string().nullable().default(null),
   tool: z.string().nullable().default(null),
   language: z.string().nullable().default(null),
@@ -110,16 +118,56 @@ export const RepositoriesResponseSchema = z.object({
   meta: z.object({ pagination: PaginationSchema }).optional(),
 })
 
+const REMEDIATION_STATUS_MAP: Record<string, 'pending' | 'ready' | 'applied' | 'error'> = {
+  pending: 'pending', processing: 'pending', running: 'pending', in_progress: 'pending',
+  enriched: 'pending', pending_input: 'pending',
+  ready: 'ready', done: 'ready', completed: 'ready',
+  pr_submitted: 'applied', applied: 'applied',
+  error: 'error', failed: 'error', quota_exceeded: 'error',
+}
+
+// The API returns diff as a structured object: { "filepath": [{ original, changes }] }
+// Each hunk has line-numbered content ("000074    line content").
+// Convert to a unified-diff-like string for the existing parseDiff utility.
+function structuredDiffToString(diff: unknown): string | null {
+  if (!diff || typeof diff !== 'object' || Array.isArray(diff)) return null
+  const lines: string[] = []
+  const stripNums = (s: string) => s.split('\n').map(l => l.replace(/^\d{6}\s{4}/, ''))
+  for (const [filePath, hunks] of Object.entries(diff as Record<string, unknown>)) {
+    if (!Array.isArray(hunks)) continue
+    lines.push(`--- a/${filePath}`, `+++ b/${filePath}`)
+    for (const hunk of hunks) {
+      lines.push('@@ hunk @@')
+      if (hunk?.original) for (const l of stripNums(String(hunk.original))) lines.push(`-${l}`)
+      if (hunk?.changes)  for (const l of stripNums(String(hunk.changes)))  lines.push(`+${l}`)
+    }
+  }
+  return lines.length > 0 ? lines.join('\n') : null
+}
+
 export const RemediationSchema = z.object({
-  id: z.string(),
-  finding_id: z.string(),
-  diff: z.string().nullable(),
-  status: z.enum(['pending', 'ready', 'applied']),
-  auto_create: z.boolean(),
-})
+  // Real API uses _id / finding_ids / processing_status / structured diff object
+  _id:               z.string().optional(),
+  id:                z.string().optional(),
+  finding_ids:       z.array(z.string()).optional(),
+  finding_id:        z.string().optional(),
+  diff:              z.unknown().optional(),
+  code_diff:         z.string().nullable().optional(),
+  processing_status: z.string().optional(),
+  status:            z.string().optional(),
+  auto_create:       z.boolean().optional().default(false),
+  error_message:     z.string().nullable().optional(),
+}).transform(r => ({
+  id:           r._id ?? r.id ?? '',
+  finding_id:   r.finding_id ?? r.finding_ids?.[0] ?? '',
+  diff:         structuredDiffToString(r.diff) ?? r.code_diff ?? null,
+  status:       REMEDIATION_STATUS_MAP[(r.processing_status ?? r.status ?? '').toLowerCase()] ?? 'pending' as const,
+  auto_create:  r.auto_create ?? false,
+  error_message: r.error_message ?? null,
+}))
 
 export const RemediationsCollectionSchema = z.object({
-  items: z.array(RemediationSchema),
+  items: z.array(RemediationSchema).optional().default([]),
   next: z.string().nullable().optional(),
   prev: z.string().nullable().optional(),
 })

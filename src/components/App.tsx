@@ -172,6 +172,22 @@ function AppShell(props: AppProps) {
         }
         return
       }
+      if (key.ctrl && input === 'u') {
+        setReplInput('')
+        return
+      }
+      if (key.ctrl && input === 'w') {
+        setReplInput(prev => {
+          const trimmed = prev.trimEnd()
+          const lastSpace = trimmed.lastIndexOf(' ')
+          return lastSpace >= 0 ? trimmed.slice(0, lastSpace + 1) : ''
+        })
+        return
+      }
+      if (key.ctrl && input === 'k') {
+        setReplInput('')
+        return
+      }
       if (key.backspace || key.delete) {
         setReplInput(prev => prev.slice(0, -1))
         return

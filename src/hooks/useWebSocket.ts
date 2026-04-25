@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useAppState } from '../state/AppState.js'
 import { plexicusWs } from '../services/websocket.js'
+import { RemediationSchema } from '../services/apiSchemas.js'
 import type { Config } from '../services/config.js'
 
 function deriveWsUrl(serverUrl: string, wsUrl?: string): string {
@@ -46,22 +47,25 @@ export function useWebSocket(config: Config) {
     })
 
     plexicusWs.on('status-remediation', (msg) => {
-      const id = String(msg.remediation_id ?? msg.finding_id ?? '')
-      const logs = msg.page_console ? [String(msg.page_console)] : []
-      dispatch({
-        type: 'status/update',
-        payload: { id, status: String(msg.processing_status ?? msg.status ?? ''), progress: Number(msg.percentage_complete ?? 0), logs },
-      })
-      if (msg.processing_status === 'ready') {
+      // Server responds with { request_type: 'status-remediation', data: { _id, processing_status, finding_id, diff, ... } }
+      const raw = (msg.data as Record<string, unknown>) ?? msg
+      const parsed = RemediationSchema.safeParse(raw)
+      if (!parsed.success) return
+      const rem = parsed.data
+      dispatch({ type: 'remediation/set', payload: rem })
+      if (rem.status === 'ready' || rem.status === 'error') {
         setTimeout(() => dispatch({ type: 'status/close' }), 2000)
       }
     })
 
-    plexicusWs.on('workflow_progress_update', (msg) => {
-      const id = String(msg.remediation_id ?? msg.finding_id ?? '')
+    plexicusWs.on('workflow_status', (msg) => {
+      if (msg.page_console !== 'remediation_generation') return
+      const id = String(msg.finding_id ?? '')
+      if (!id) return
+      const logs = msg.message ? [String(msg.message)] : []
       dispatch({
         type: 'status/update',
-        payload: { id, status: String(msg.status ?? ''), progress: Number(msg.percentage_complete ?? 0), logs: [] },
+        payload: { id, status: String(msg.status ?? 'pending'), progress: Number(msg.percentage_complete ?? 0), logs },
       })
     })
 

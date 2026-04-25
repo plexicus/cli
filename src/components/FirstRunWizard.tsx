@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Box, Text } from 'ink'
-import TextInput from 'ink-text-input'
+import { SmartTextInput as TextInput } from './design-system/SmartTextInput.js'
 import { saveConfig, loadConfig } from '../services/config.js'
 
 interface FirstRunWizardProps {

@@ -6,16 +6,22 @@ import { set } from 'lodash-es'
 import { getConfigDir, getConfigPath } from '../utils/paths.js'
 import { PlexicusConfigError } from '../utils/errors.js'
 
+// Accepts a URL string or empty/null (converts falsy → undefined so Zod url() never sees "")
+const optionalUrl = z.preprocess(
+  v => (!v || typeof v !== 'string' ? undefined : v),
+  z.string().url().optional(),
+)
+
 const LLMConfigSchema = z.object({
   provider: z.enum(['claude', 'openai']).optional(),
   apiKey: z.string().optional(),
   model: z.string().optional(),
-  baseUrl: z.string().url().optional(),
+  baseUrl: optionalUrl,
 })
 
 export const ConfigSchema = z.object({
   serverUrl: z.string().url().default('https://api.app.plexicus.ai'),
-  webUrl: z.string().url().optional(),
+  webUrl: optionalUrl,
   wsUrl: z.string().optional(),
   token: z.string().optional(),
   llm: LLMConfigSchema.default({}),
@@ -29,13 +35,29 @@ export async function loadConfig(): Promise<Config> {
   if (!existsSync(configPath)) {
     return ConfigSchema.parse({})
   }
+  let json: unknown = {}
   try {
     const raw = await readFile(configPath, 'utf-8')
-    const parsed = JSON.parse(raw)
-    return ConfigSchema.parse(parsed)
+    json = JSON.parse(raw)
   } catch {
     return ConfigSchema.parse({})
   }
+  const result = ConfigSchema.safeParse(json)
+  if (result.success) return result.data
+  // Validation failed for some fields — strip invalid optional URL fields and retry
+  // so a bad llm.baseUrl or webUrl doesn't wipe out serverUrl / token
+  if (typeof json === 'object' && json !== null) {
+    const safe = { ...(json as Record<string, unknown>) }
+    if (!safe.webUrl) delete safe.webUrl
+    if (typeof safe.llm === 'object' && safe.llm !== null) {
+      const llm = { ...(safe.llm as Record<string, unknown>) }
+      if (!llm.baseUrl) delete llm.baseUrl
+      safe.llm = llm
+    }
+    const retry = ConfigSchema.safeParse(safe)
+    if (retry.success) return retry.data
+  }
+  return ConfigSchema.parse({})
 }
 
 export async function saveConfig(config: Config): Promise<void> {

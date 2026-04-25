@@ -13,6 +13,8 @@ function statusLabel(finding: Finding): string {
     case 'open': return 'open'
     case 'mitigated': return '✓ mitigated'
     case 'enriched': return '⊕ enriched'
+    case 'ready': return '⚡ ready'
+    default: return finding.status
   }
 }
 
@@ -22,6 +24,8 @@ function statusColor(finding: Finding): string {
     case 'open': return 'yellow'
     case 'mitigated': return 'green'
     case 'enriched': return 'cyan'
+    case 'ready': return 'magenta'
+    default: return 'white'
   }
 }
 
@@ -119,7 +123,6 @@ export function FindingDetailScreen() {
   const codeSource = finding?.scanner_report_code ?? finding?.single_line_code ?? null
   const codeLineCount = codeSource?.split('\n').length ?? 0
 
-  // Auto-scroll so the highlighted line is centred on open
   useEffect(() => {
     if (!codeSource || !finding?.line) return
     const lines = codeSource.split('\n')
@@ -153,9 +156,10 @@ export function FindingDetailScreen() {
   const linkUrl = repo ? scmUrl(repo, finding) : null
   const linkLabel = repo ? scmLabel(repo.source_control) : null
 
-  // Contextual action labels
   const fpLabel = finding.is_false_positive ? 'f=un-fp' : 'f=fp'
   const suppressLabel = finding.status === 'mitigated' ? 's=re-open' : 's=suppress'
+  const hasRemediation = finding.status === 'mitigated' || finding.status === 'ready'
+  const fixLabel = hasRemediation ? 'r=view remediation' : 'r=fix'
 
   return (
     <Box flexDirection="column" paddingX={1} flexGrow={1}>
@@ -360,7 +364,7 @@ export function FindingDetailScreen() {
 
       {/* ── Actions ── */}
       <Box marginTop={1}>
-        <Text dimColor>r=fix  {suppressLabel}  {fpLabel}</Text>
+        <Text dimColor>{fixLabel}  {suppressLabel}  {fpLabel}</Text>
         {linkUrl && <Text dimColor>  o={linkLabel}</Text>}
         {codeLineCount > CODE_VISIBLE && <Text dimColor>  ↑↓=scroll code</Text>}
         <Text dimColor>  Esc=back</Text>

@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { Box, Text, useInput } from 'ink'
-import TextInput from 'ink-text-input'
+import { SmartTextInput as TextInput } from './design-system/SmartTextInput.js'
 import { useAppState } from '../state/AppState.js'
 import { PlexicusApi } from '../services/plexicusApi.js'
 import { loadConfig, saveConfig } from '../services/config.js'

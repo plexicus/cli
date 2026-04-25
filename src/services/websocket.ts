@@ -96,6 +96,12 @@ class PlexicusWebSocket {
     this.handlers.get(requestType)?.delete(handler)
   }
 
+  send(data: object): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data))
+    }
+  }
+
   disconnect(): void {
     this.shouldReconnect = false
     if (this.reconnectTimer !== null) {

@@ -6,7 +6,7 @@ import { severityRank } from '../utils/severity.js'
 import type { Finding } from '../types.js'
 
 function sortFindings(findings: Finding[], sortBy: string | undefined, sortDir: string | undefined): Finding[] {
-  const dir = sortDir === 'asc' ? 1 : -1
+  const dir = sortDir === 'asc' ? -1 : 1
   return [...findings].sort((a, b) => {
     switch (sortBy ?? 'priority') {
       case 'priority':

@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { Box, Text, useInput } from 'ink'
-import TextInput from 'ink-text-input'
+import { SmartTextInput as TextInput } from './SmartTextInput.js'
 
 interface FuzzyPickerProps<T> {
   items: T[]

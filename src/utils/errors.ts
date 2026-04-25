@@ -29,3 +29,13 @@ export class LLMError extends Error {
     this.name = 'LLMError'
   }
 }
+
+export function friendlyError(err: unknown, fallback: string): string {
+  const msg = err instanceof Error ? err.message : String(err ?? '')
+  // If the message looks like a JSON array/object (Zod errors, API error arrays) replace with fallback
+  const trimmed = msg.trim()
+  if (trimmed.startsWith('[') || (trimmed.startsWith('{') && trimmed.includes('"code"'))) {
+    return fallback
+  }
+  return msg || fallback
+}
